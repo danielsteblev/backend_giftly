@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_yasg',
     'corsheaders',
+    'django_extensions',
 ]
 
 MIDDLEWARE = [
@@ -68,7 +69,7 @@ DATABASES = {
         'NAME': 'giftly_db',
         'USER': 'postgres',
         'PASSWORD': '1985',
-        'HOST': 'db',
+        'HOST': 'db',  # Имя сервиса из docker-compose
         'PORT': '5432',
         'OPTIONS': {
             'options': '-c search_path=public'

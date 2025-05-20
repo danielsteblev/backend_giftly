@@ -1,5 +1,7 @@
 
 
+
+
 services:
   nginx:
     image: nginx:latest
@@ -22,7 +24,10 @@ services:
     image: postgres:latest
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: 1985
+      POSTGRES_DB: giftly_db
+    ports:
+     - "5432:5432"
+
     
 

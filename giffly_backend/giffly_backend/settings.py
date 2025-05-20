@@ -68,7 +68,7 @@ DATABASES = {
         'NAME': 'giftly_db',
         'USER': 'postgres',
         'PASSWORD': '1985',
-        'HOST': 'localhost',
+        'HOST': 'db',
         'PORT': '5432',
         'OPTIONS': {
             'options': '-c search_path=public'

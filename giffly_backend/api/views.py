@@ -96,10 +96,15 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [AllowAny]
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsSellerOrAdmin()]
+        return [AllowAny()]
+
     def create(self, request, *args, **kwargs):
         try:
             # Проверяем обязательные поля
-            required_fields = ['name', 'price']
+            required_fields = ['name', 'price', 'seller']
             for field in required_fields:
                 if field not in request.data:
                     return Response(
@@ -120,6 +125,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                     {'error': 'Некорректное значение цены'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # Проверяем, что пользователь является продавцом
+            if request.user.role != 'seller':
+                return Response(
+                    {'error': 'Только продавцы могут создавать товары'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Устанавливаем текущего пользователя как продавца
+            request.data['seller'] = request.user.id
 
             # Создаем товар
             serializer = self.get_serializer(data=request.data)

@@ -46,9 +46,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 class ProductSerializer(serializers.ModelSerializer):
+    seller = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='seller'), required=True)
+    
     class Meta:
         model = Product
-        fields = ['id', 'name', 'description', 'price', 'image_url', 'created_at', 'updated_at']
+        fields = ['id', 'seller', 'name', 'description', 'price', 'image_url', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
             'name': {'required': True, 'min_length': 3, 'max_length': 200},
@@ -65,6 +67,11 @@ class ProductSerializer(serializers.ModelSerializer):
     def validate_name(self, value):
         if len(value) < 3:
             raise serializers.ValidationError("Название товара должно содержать минимум 3 символа")
+        return value
+
+    def validate_seller(self, value):
+        if value.role != 'seller':
+            raise serializers.ValidationError("Только пользователи с ролью 'seller' могут создавать товары")
         return value
 
 class CartSerializer(serializers.ModelSerializer):

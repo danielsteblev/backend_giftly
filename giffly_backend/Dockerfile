@@ -13,7 +13,8 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Установка зависимостей Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir django-extensions==3.2.3 && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Создание директорий для статических и медиа файлов
 RUN mkdir -p /app/static /app/media

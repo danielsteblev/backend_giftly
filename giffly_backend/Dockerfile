@@ -9,15 +9,17 @@ RUN apt-get update && apt-get install -y \
 # Установка рабочей директории
 WORKDIR /app
 
-# Копирование и установка зависимостей
+# Копирование только requirements.txt сначала
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование проекта
-COPY . .
+# Установка зависимостей Python
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Создание директорий для статических и медиа файлов
 RUN mkdir -p /app/static /app/media
+
+# Копирование проекта
+COPY . .
 
 # Сборка статических файлов
 RUN python manage.py collectstatic --noinput

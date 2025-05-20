@@ -18,5 +18,8 @@ RUN pip install djangorestframework
 # Копируем исходники
 COPY . .
 
-# Сборка статики
-RUN python manage.py collectstatic --noinput
+# Делаем скрипт запуска исполняемым
+RUN chmod +x /app/entrypoint.sh
+
+# Запуск приложения
+ENTRYPOINT ["/app/entrypoint.sh"]

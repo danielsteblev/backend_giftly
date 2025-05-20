@@ -1,6 +1,9 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserViewSet, ProductViewSet, CartViewSet, OrderViewSet, FavoriteViewSet, SalesStatisticsViewSet
+from .views import (
+    UserViewSet, ProductViewSet, CartViewSet, OrderViewSet,
+    FavoriteViewSet, SalesStatisticsViewSet, HealthCheckView
+)
 
 router = DefaultRouter()
 
@@ -13,4 +16,5 @@ router.register(r'statistics', SalesStatisticsViewSet, basename='statistics')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('health/', HealthCheckView.as_view(), name='health-check'),
 ]

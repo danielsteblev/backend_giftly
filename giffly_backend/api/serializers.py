@@ -1,16 +1,49 @@
 from rest_framework import serializers
 from .models import User, Product, Cart, Order, Favorite, SalesStatistics
 from django.contrib.auth.hashers import make_password
+from django.core.validators import EmailValidator
 
 class UserSerializer(serializers.ModelSerializer):
+    birth_date = serializers.DateField(format="%Y-%m-%d", input_formats=["%Y-%m-%d"], required=False)
+    
     class Meta:
         model = User
-        fields = ['id', 'username', 'password', 'role', 'phone', 'birth_date']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'email', 'first_name', 'last_name', 'role', 'phone', 'birth_date']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'email': {'required': True},
+            'first_name': {'required': False},
+            'last_name': {'required': False},
+            'phone': {'required': False},
+        }
+        read_only_fields = ['id']
 
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=6)
+    email = serializers.EmailField(validators=[EmailValidator()])
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    
+    class Meta:
+        model = User
+        fields = ['email', 'password', 'first_name', 'last_name']
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует")
+        return value
+    
     def create(self, validated_data):
-        validated_data['password'] = make_password(validated_data['password'])
-        return super().create(validated_data)
+        username = validated_data['email']
+        user = User.objects.create_user(
+            username=username,
+            email=validated_data['email'],
+            password=validated_data['password'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+            role='buyer'
+        )
+        return user
 
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:

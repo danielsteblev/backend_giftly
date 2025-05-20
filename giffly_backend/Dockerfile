@@ -1,25 +1,26 @@
-FROM python:3.11-slim
-
-WORKDIR /app
+FROM python:3.11.9-slim
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
-    gcc \
-    python3-dev \
+    build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем зависимости
+# Установка рабочей директории
+WORKDIR /app
+
+# Копирование и установка зависимостей
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Добавьте это вручную, если rest_framework не указан в requirements.txt:
-RUN pip install djangorestframework
-
-# Копируем исходники
+# Копирование проекта
 COPY . .
 
-# Делаем скрипт запуска исполняемым
-RUN chmod +x /app/entrypoint.sh
+# Создание директорий для статических и медиа файлов
+RUN mkdir -p /app/static /app/media
+
+# Сборка статических файлов
+RUN python manage.py collectstatic --noinput
 
 # Запуск приложения
-ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["gunicorn", "giffly_backend.wsgi:application", "--bind", "0.0.0.0:8000", "--config", "gunicorn_config.py"]

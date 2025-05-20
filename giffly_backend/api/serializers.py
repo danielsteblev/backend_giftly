@@ -56,7 +56,8 @@ class ProductSerializer(serializers.ModelSerializer):
             'name': {'required': True, 'min_length': 3, 'max_length': 200},
             'description': {'required': False, 'allow_blank': True},
             'price': {'required': True, 'min_value': 0},
-            'image_url': {'required': False}
+            'image_url': {'required': False},
+            'seller': {'required': True},
         }
 
     def validate_price(self, value):

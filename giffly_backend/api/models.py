@@ -40,7 +40,7 @@ class User(AbstractUser):
 
 # товар
 class Product(models.Model):
-    seller_id = models.ForeignKey('User', on_delete=models.CASCADE, related_name='products')
+    seller = models.ForeignKey('User', on_delete=models.CASCADE, related_name='products')
     name = models.CharField(max_length=255)
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)

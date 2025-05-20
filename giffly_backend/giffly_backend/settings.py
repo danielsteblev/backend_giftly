@@ -87,6 +87,9 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8080",  # Vue по умолчанию
     "http://127.0.0.1:3000",
     "http://127.0.0.1:8080",
+    "http://185.91.54.146",   # Ваш домен
+    "http://185.91.54.146:80",
+    "http://185.91.54.146:3000",
 ]
 
 CORS_ALLOWED_METHODS = [

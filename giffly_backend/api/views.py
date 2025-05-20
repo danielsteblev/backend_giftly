@@ -96,6 +96,47 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [AllowAny]
 
+    def create(self, request, *args, **kwargs):
+        try:
+            # Проверяем обязательные поля
+            required_fields = ['name', 'price']
+            for field in required_fields:
+                if field not in request.data:
+                    return Response(
+                        {'error': f'Поле {field} обязательно для заполнения'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Проверяем, что цена положительная
+            try:
+                price = float(request.data.get('price', 0))
+                if price <= 0:
+                    return Response(
+                        {'error': 'Цена должна быть положительным числом'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except ValueError:
+                return Response(
+                    {'error': 'Некорректное значение цены'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Создаем товар
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+
+            return Response({
+                'message': 'Товар успешно создан',
+                'product': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при создании товара'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=False, methods=['get'])
     def recent(self, request):
         recent_products = Product.objects.order_by('-created_at')[:5]

@@ -48,7 +48,24 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     class Meta:
         model = Product
-        fields = '__all__'
+        fields = ['id', 'name', 'description', 'price', 'image_url', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'name': {'required': True, 'min_length': 3, 'max_length': 200},
+            'description': {'required': False, 'allow_blank': True},
+            'price': {'required': True, 'min_value': 0},
+            'image_url': {'required': False, 'allow_blank': True}
+        }
+
+    def validate_price(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Цена должна быть положительным числом")
+        return value
+
+    def validate_name(self, value):
+        if len(value) < 3:
+            raise serializers.ValidationError("Название товара должно содержать минимум 3 символа")
+        return value
 
 class CartSerializer(serializers.ModelSerializer):
     class Meta:

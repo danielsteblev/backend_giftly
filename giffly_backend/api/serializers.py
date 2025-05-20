@@ -50,13 +50,13 @@ class ProductSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Product
-        fields = ['id', 'seller', 'name', 'description', 'price', 'image_url', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'price', 'image', 'created_at', 'updated_at']
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
             'name': {'required': True, 'min_length': 3, 'max_length': 200},
             'description': {'required': False, 'allow_blank': True},
             'price': {'required': True, 'min_value': 0},
-            'image_url': {'required': False, 'allow_blank': True}
+            'image': {'required': False, 'allow_blank': True}
         }
 
     def validate_price(self, value):

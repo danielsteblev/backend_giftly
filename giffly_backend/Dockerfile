@@ -1,29 +1,22 @@
-FROM python:3.11.9-slim
+FROM python:3.11-slim
+
+WORKDIR /app
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка рабочей директории
-WORKDIR /app
-
-# Копирование только requirements.txt сначала
+# Копируем зависимости
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Установка зависимостей Python
-RUN pip install --no-cache-dir django-extensions==3.2.3 && \
-    pip install --no-cache-dir -r requirements.txt
+# Добавьте это вручную, если rest_framework не указан в requirements.txt:
+RUN pip install djangorestframework
 
-# Создание директорий для статических и медиа файлов
-RUN mkdir -p /app/static /app/media
-
-# Копирование проекта
+# Копируем исходники
 COPY . .
 
-# Сборка статических файлов
+# Сборка статики
 RUN python manage.py collectstatic --noinput
-
-# Запуск приложения
-CMD ["gunicorn", "giffly_backend.wsgi:application", "--bind", "0.0.0.0:8000", "--config", "gunicorn_config.py"]

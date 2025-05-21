@@ -51,14 +51,14 @@ class ProductSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Product
-        fields = ['id', 'seller', 'name', 'description', 'price', 'image', 'created_at', 'updated_at', 'is_favorite']
+        fields = ['id', 'seller', 'name', 'description', 'price', 'image_url', 'created_at', 'updated_at', 'is_favorite']
         read_only_fields = ['id', 'created_at', 'updated_at', 'is_favorite']
         extra_kwargs = {
             'seller': {'required': True},
             'name': {'required': True, 'min_length': 3, 'max_length': 200},
             'description': {'required': False, 'allow_blank': True},
             'price': {'required': True, 'min_value': 0},
-            'image': {'required': False},
+            'image_url': {'required': False},
         }
 
     def get_is_favorite(self, obj):

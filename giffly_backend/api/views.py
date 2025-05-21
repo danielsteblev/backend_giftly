@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import User, Product, Cart, Order, Favorite, SalesStatistics
+from .models import User, Product, Cart, Order, Favorite, SalesStatistics, CartItem
 from .serializers import (
     UserSerializer, ProductSerializer, CartSerializer, OrderSerializer,
     FavoriteSerializer, SalesStatisticsSerializer, UserRegistrationSerializer
@@ -97,9 +97,25 @@ class ProductViewSet(viewsets.ModelViewSet):
     permission_classes = [AllowAny]
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'toggle_favorite']:
             return [IsAuthenticated(), IsSellerOrAdmin()]
         return [AllowAny()]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+    @action(detail=True, methods=['post'])
+    def toggle_favorite(self, request, pk=None):
+        product = self.get_object()
+        favorite, created = Favorite.objects.get_or_create(user=request.user, product=product)
+        
+        if not created:
+            favorite.delete()
+            return Response({'status': 'removed from favorites'})
+        
+        return Response({'status': 'added to favorites'})
 
     def create(self, request, *args, **kwargs):
         try:
@@ -155,6 +171,124 @@ class CartViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Cart.objects.filter(user=self.request.user)
 
+    def get_or_create_cart(self):
+        cart, created = Cart.objects.get_or_create(user=self.request.user)
+        return cart
+
+    @action(detail=False, methods=['post'])
+    def add_item(self, request):
+        try:
+            product_id = request.data.get('product_id')
+            quantity = int(request.data.get('quantity', 1))
+
+            if not product_id:
+                return Response(
+                    {'error': 'ID товара обязателен'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if quantity <= 0:
+                return Response(
+                    {'error': 'Количество должно быть положительным числом'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': 'Товар не найден'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            cart = self.get_or_create_cart()
+            cart_item, created = CartItem.objects.get_or_create(
+                cart=cart,
+                product=product,
+                defaults={'quantity': quantity}
+            )
+
+            if not created:
+                cart_item.quantity += quantity
+                cart_item.save()
+
+            serializer = self.get_serializer(cart)
+            return Response({
+                'message': 'Товар успешно добавлен в корзину',
+                'cart': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при добавлении товара в корзину'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def remove_item(self, request):
+        try:
+            product_id = request.data.get('product_id')
+            quantity = int(request.data.get('quantity', 1))
+
+            if not product_id:
+                return Response(
+                    {'error': 'ID товара обязателен'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                cart = Cart.objects.get(user=self.request.user)
+                cart_item = CartItem.objects.get(cart=cart, product_id=product_id)
+            except (Cart.DoesNotExist, CartItem.DoesNotExist):
+                return Response(
+                    {'error': 'Товар не найден в корзине'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            if cart_item.quantity <= quantity:
+                cart_item.delete()
+            else:
+                cart_item.quantity -= quantity
+                cart_item.save()
+
+            serializer = self.get_serializer(cart)
+            return Response({
+                'message': 'Товар успешно удален из корзины',
+                'cart': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при удалении товара из корзины'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'])
+    def get_cart(self, request):
+        try:
+            cart = self.get_or_create_cart()
+            serializer = self.get_serializer(cart)
+            return Response(serializer.data)
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при получении корзины'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def clear_cart(self, request):
+        try:
+            cart = self.get_or_create_cart()
+            cart.products.clear()
+            return Response({
+                'message': 'Корзина успешно очищена'
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при очистке корзины'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class OrderViewSet(viewsets.ModelViewSet):
     serializer_class = OrderSerializer
     permission_classes = [IsAuthenticated]
@@ -163,6 +297,89 @@ class OrderViewSet(viewsets.ModelViewSet):
         if self.request.user.role == 'seller':
             return Order.objects.filter(products__seller=self.request.user).distinct()
         return Order.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=['post'])
+    def create_from_cart(self, request):
+        try:
+            # Получаем корзину пользователя
+            try:
+                cart = Cart.objects.get(user=request.user)
+            except Cart.DoesNotExist:
+                return Response(
+                    {'error': 'Корзина пуста'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Проверяем, есть ли товары в корзине
+            cart_items = CartItem.objects.filter(cart=cart)
+            if not cart_items.exists():
+                return Response(
+                    {'error': 'Корзина пуста'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Рассчитываем общую сумму заказа
+            total_amount = sum(item.product.price * item.quantity for item in cart_items)
+
+            # Создаем заказ
+            order = Order.objects.create(
+                user=request.user,
+                total_amount=total_amount,
+                status='pending'
+            )
+
+            # Добавляем товары в заказ
+            for item in cart_items:
+                order.products.add(item.product)
+
+            # Очищаем корзину
+            cart_items.delete()
+
+            # Сериализуем и возвращаем созданный заказ
+            serializer = self.get_serializer(order)
+            return Response({
+                'message': 'Заказ успешно создан',
+                'order': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при создании заказа'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def update_status(self, request, pk=None):
+        try:
+            order = self.get_object()
+            new_status = request.data.get('status')
+
+            if not new_status:
+                return Response(
+                    {'error': 'Статус заказа обязателен'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if new_status not in dict(Order.STATUS_CHOICES):
+                return Response(
+                    {'error': 'Некорректный статус заказа'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            order.status = new_status
+            order.save()
+
+            serializer = self.get_serializer(order)
+            return Response({
+                'message': 'Статус заказа успешно обновлен',
+                'order': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при обновлении статуса заказа'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class FavoriteViewSet(viewsets.ModelViewSet):
     serializer_class = FavoriteSerializer

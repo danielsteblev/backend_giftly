@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Product, Cart, Order, Favorite, SalesStatistics
+from .models import User, Product, Cart, Order, Favorite, SalesStatistics, CartItem
 from django.contrib.auth.hashers import make_password
 from django.core.validators import EmailValidator
 
@@ -47,18 +47,25 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     seller = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='seller'), required=True)
+    is_favorite = serializers.SerializerMethodField()
     
     class Meta:
         model = Product
-        fields = ['id', 'seller', 'name', 'description', 'price', 'image_url', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'seller', 'name', 'description', 'price', 'image', 'created_at', 'updated_at', 'is_favorite']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'is_favorite']
         extra_kwargs = {
-             'seller': {'required': True},
+            'seller': {'required': True},
             'name': {'required': True, 'min_length': 3, 'max_length': 200},
             'description': {'required': False, 'allow_blank': True},
             'price': {'required': True, 'min_value': 0},
-            'image_url': {'required': False},
+            'image': {'required': False},
         }
+
+    def get_is_favorite(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return Favorite.objects.filter(user=request.user, product=obj).exists()
+        return False
 
     def validate_price(self, value):
         if value <= 0:
@@ -75,20 +82,45 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Только пользователи с ролью 'seller' могут создавать товары")
         return value
 
+class CartItemSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+    
+    class Meta:
+        model = CartItem
+        fields = ['id', 'product', 'quantity']
+
 class CartSerializer(serializers.ModelSerializer):
+    items = CartItemSerializer(source='cartitem_set', many=True, read_only=True)
+    total_price = serializers.SerializerMethodField()
+
     class Meta:
         model = Cart
-        fields = '__all__'
+        fields = ['id', 'user', 'items', 'total_price']
+        read_only_fields = ['id', 'user', 'total_price']
+
+    def get_total_price(self, obj):
+        total = 0
+        for item in obj.cartitem_set.all():
+            total += item.product.price * item.quantity
+        return total
 
 class OrderSerializer(serializers.ModelSerializer):
+    products = ProductSerializer(many=True, read_only=True)
+    user = UserSerializer(read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
     class Meta:
         model = Order
-        fields = '__all__'
+        fields = ['id', 'user', 'products', 'total_amount', 'status', 'status_display', 'created_at']
+        read_only_fields = ['id', 'user', 'total_amount', 'created_at']
 
 class FavoriteSerializer(serializers.ModelSerializer):
+    product = ProductSerializer(read_only=True)
+    
     class Meta:
         model = Favorite
-        fields = '__all__'
+        fields = ['id', 'product', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 class SalesStatisticsSerializer(serializers.ModelSerializer):
     class Meta:

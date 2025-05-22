@@ -18,6 +18,8 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -27,15 +29,20 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password')
         email = validated_data.pop('email')
         
+        # Устанавливаем пустые строки для first_name и last_name, если они не предоставлены
+        if 'first_name' not in validated_data:
+            validated_data['first_name'] = ''
+        if 'last_name' not in validated_data:
+            validated_data['last_name'] = ''
+        
         # Создаем пользователя с email в качестве username
-        user = User(
+        user = User.objects.create_user(
             username=email,
             email=email,
+            password=password,
             is_active=True,
             **validated_data
         )
-        user.set_password(password)
-        user.save()
         return user
 
 class ProductSerializer(serializers.ModelSerializer):

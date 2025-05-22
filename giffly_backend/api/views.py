@@ -10,7 +10,7 @@ from .serializers import (
 from .permissions import IsSellerOrAdmin, IsOwner
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
-from django.contrib.auth.models import User as AuthUser
+from django.conf import settings
 
 class HealthCheckView(APIView):
     permission_classes = [AllowAny]
@@ -39,7 +39,8 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
                 user = serializer.save()
-                token, _ = Token.objects.get_or_create(user=user)
+                # Создаем токен для пользователя
+                token = Token.objects.create(user=user)
                 return Response({
                     'user': UserSerializer(user, context=self.get_serializer_context()).data,
                     'token': token.key,

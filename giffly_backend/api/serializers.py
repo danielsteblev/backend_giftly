@@ -4,19 +4,17 @@ from django.contrib.auth.hashers import make_password
 from django.core.validators import EmailValidator
 
 class UserSerializer(serializers.ModelSerializer):
-    birth_date = serializers.DateField(format="%Y-%m-%d", input_formats=["%Y-%m-%d"], required=False)
+    birth_date = serializers.DateField(format="%Y-%m-%d", input_formats=["%Y-%m-%d"], required=False, allow_null=True)
+    role = serializers.CharField(required=False)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=False, allow_blank=True)
+    photo_url = serializers.CharField(required=False, allow_blank=True)
     
     class Meta:
         model = User
-        fields = ['id', 'email', 'first_name', 'last_name', 'role', 'phone', 'birth_date']
-        extra_kwargs = {
-            'password': {'write_only': True},
-            'email': {'required': True},
-            'first_name': {'required': False},
-            'last_name': {'required': False},
-            'phone': {'required': False},
-        }
-        read_only_fields = ['id']
+        fields = ['id', 'email', 'first_name', 'last_name', 'role', 'phone', 'birth_date', 'photo_url']
+        read_only_fields = ['id', 'email']
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
@@ -46,7 +44,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 class ProductSerializer(serializers.ModelSerializer):
-    seller = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='seller'), required=True)
+    seller = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=True)
     is_favorite = serializers.SerializerMethodField()
     
     class Meta:
@@ -63,8 +61,11 @@ class ProductSerializer(serializers.ModelSerializer):
 
     def get_is_favorite(self, obj):
         request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return Favorite.objects.filter(user=request.user, product=obj).exists()
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            try:
+                return Favorite.objects.filter(user=request.user, product=obj).exists()
+            except:
+                return False
         return False
 
     def validate_price(self, value):
@@ -78,9 +79,15 @@ class ProductSerializer(serializers.ModelSerializer):
         return value
 
     def validate_seller(self, value):
-        if value.role != 'seller':
+        if not hasattr(value, 'role') or value.role != 'seller':
             raise serializers.ValidationError("Только пользователи с ролью 'seller' могут создавать товары")
         return value
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['seller'] = request.user
+        return super().create(validated_data)
 
 class CartItemSerializer(serializers.ModelSerializer):
     product = ProductSerializer(read_only=True)

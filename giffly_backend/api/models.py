@@ -36,6 +36,11 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
+    class Meta:
+        swappable = 'AUTH_USER_MODEL'
+        verbose_name = 'user'
+        verbose_name_plural = 'users'
+
 
 
 # товар
@@ -51,6 +56,8 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+
+# корзина
 class Cart(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     products = models.ManyToManyField('Product', through='CartItem')
@@ -59,6 +66,16 @@ class CartItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE)
     quantity = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        unique_together = ('product', 'cart')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['product', 'cart'],
+                name='unique_cart_item'
+            )
+        ]
+
 
 class Order(models.Model):
     STATUS_CHOICES = (

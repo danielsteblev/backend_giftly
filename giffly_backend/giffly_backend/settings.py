@@ -25,7 +25,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'api.apps.ApiConfig',
     'rest_framework',
-    'rest_framework_simplejwt',
+    'rest_framework.authtoken',
     'drf_yasg',
     'corsheaders',
 ]
@@ -70,11 +70,8 @@ DATABASES = {
         'NAME': 'giftly_db',
         'USER': 'postgres',
         'PASSWORD': '1985',
-        'HOST': 'db',  # Имя сервиса из docker-compose
+        'HOST': 'db',  # Имя сервиса в docker-compose
         'PORT': '5432',
-        'OPTIONS': {
-            'options': '-c search_path=public'
-        }
     }
 }
 # Настройки медиафайлов
@@ -118,6 +115,7 @@ CORS_ALLOWED_HEADERS = [
 # DRF
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
     ],
@@ -167,6 +165,9 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Custom user model
+AUTH_USER_MODEL = 'api.User'
 
 # Security settings
 SECURE_SSL_REDIRECT = False  # Отключаем для разработки

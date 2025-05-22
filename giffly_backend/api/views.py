@@ -9,6 +9,8 @@ from .serializers import (
 )
 from .permissions import IsSellerOrAdmin, IsOwner
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import User as AuthUser
 
 class HealthCheckView(APIView):
     permission_classes = [AllowAny]
@@ -36,7 +38,20 @@ class UserViewSet(viewsets.ModelViewSet):
         try:
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
+                # Создаем пользователя в auth_user
+                auth_user = AuthUser.objects.create_user(
+                    username=request.data['email'],
+                    email=request.data['email'],
+                    password=request.data['password']
+                )
+                
+                # Создаем пользователя в нашей модели
                 user = serializer.save()
+                
+                # Связываем пользователей
+                user.id = auth_user.id
+                user.save()
+                
                 return Response({
                     'user': UserSerializer(user, context=self.get_serializer_context()).data,
                     'message': 'Пользователь успешно зарегистрирован'
@@ -67,8 +82,21 @@ class UserViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
+            # Проверяем, существует ли пользователь в auth_user
+            if not user.id:
+                return Response(
+                    {'error': 'Ошибка аутентификации: пользователь не найден в системе'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Создаем или получаем существующий токен
+            token, _ = Token.objects.get_or_create(user=user)
+            
             serializer = UserSerializer(user)
-            return Response(serializer.data)
+            return Response({
+                'user': serializer.data,
+                'token': token.key
+            })
         except User.DoesNotExist:
             return Response(
                 {'error': 'Пользователь не найден'},
@@ -108,11 +136,18 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context['request'] = self.request
+        if hasattr(self.request, 'user'):
+            context['request'] = self.request
         return context
 
     @action(detail=True, methods=['post'])
     def toggle_favorite(self, request, pk=None):
+        if not request.user.is_authenticated:
+            return Response(
+                {'error': 'Требуется авторизация'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            
         product = self.get_object()
         favorite, created = Favorite.objects.get_or_create(user=request.user, product=product)
         
@@ -245,7 +280,6 @@ class CartViewSet(viewsets.ModelViewSet):
     def remove_item(self, request):
         try:
             product_id = request.data.get('product_id')
-            quantity = int(request.data.get('quantity', 1))
 
             if not product_id:
                 return Response(
@@ -254,33 +288,23 @@ class CartViewSet(viewsets.ModelViewSet):
                 )
 
             try:
-                cart = Cart.objects.get(user=self.request.user)
-                cart_item = CartItem.objects.get(cart=cart, product_id=product_id)
-            except (Cart.DoesNotExist, CartItem.DoesNotExist):
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
                 return Response(
-                    {'error': 'Товар не найден в корзине'},
+                    {'error': 'Товар не найден'},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            if cart_item.quantity <= quantity:
-                cart_item.delete()
-                message = 'Товар полностью удален из корзины'
-            else:
-                cart_item.quantity -= quantity
-                cart_item.save()
-                message = f'Количество товара уменьшено на {quantity}'
+            cart = self.get_or_create_cart()
+            # Удаляем все записи для данного товара
+            CartItem.objects.filter(cart=cart, product=product).delete()
 
             serializer = self.get_serializer(cart)
             return Response({
-                'message': message,
+                'message': 'Товар успешно удален из корзины',
                 'cart': serializer.data
             }, status=status.HTTP_200_OK)
 
-        except ValueError as e:
-            return Response({
-                'error': 'Некорректное значение количества',
-                'message': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({
                 'error': str(e),
@@ -365,8 +389,6 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        if self.request.user.role == 'seller':
-            return Order.objects.filter(products__seller=self.request.user).distinct()
         return Order.objects.filter(user=self.request.user)
 
     @action(detail=False, methods=['post'])

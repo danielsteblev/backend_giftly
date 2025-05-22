@@ -201,6 +201,13 @@ class CartViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            # Проверяем, не пытается ли продавец добавить свой товар
+            if product.seller == request.user:
+                return Response(
+                    {'error': 'Продавец не может добавить свой товар в корзину'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             cart = self.get_or_create_cart()
             cart_item, created = CartItem.objects.get_or_create(
                 cart=cart,
@@ -218,6 +225,11 @@ class CartViewSet(viewsets.ModelViewSet):
                 'cart': serializer.data
             }, status=status.HTTP_200_OK)
 
+        except ValueError as e:
+            return Response({
+                'error': 'Некорректное значение количества',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({
                 'error': str(e),
@@ -247,16 +259,23 @@ class CartViewSet(viewsets.ModelViewSet):
 
             if cart_item.quantity <= quantity:
                 cart_item.delete()
+                message = 'Товар полностью удален из корзины'
             else:
                 cart_item.quantity -= quantity
                 cart_item.save()
+                message = f'Количество товара уменьшено на {quantity}'
 
             serializer = self.get_serializer(cart)
             return Response({
-                'message': 'Товар успешно удален из корзины',
+                'message': message,
                 'cart': serializer.data
             }, status=status.HTTP_200_OK)
 
+        except ValueError as e:
+            return Response({
+                'error': 'Некорректное значение количества',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({
                 'error': str(e),
@@ -279,7 +298,7 @@ class CartViewSet(viewsets.ModelViewSet):
     def clear_cart(self, request):
         try:
             cart = self.get_or_create_cart()
-            cart.products.clear()
+            CartItem.objects.filter(cart=cart).delete()
             return Response({
                 'message': 'Корзина успешно очищена'
             }, status=status.HTTP_200_OK)
@@ -287,6 +306,53 @@ class CartViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': str(e),
                 'message': 'Произошла ошибка при очистке корзины'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def update_quantity(self, request):
+        try:
+            product_id = request.data.get('product_id')
+            quantity = int(request.data.get('quantity', 1))
+
+            if not product_id:
+                return Response(
+                    {'error': 'ID товара обязателен'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if quantity <= 0:
+                return Response(
+                    {'error': 'Количество должно быть положительным числом'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                cart = Cart.objects.get(user=self.request.user)
+                cart_item = CartItem.objects.get(cart=cart, product_id=product_id)
+            except (Cart.DoesNotExist, CartItem.DoesNotExist):
+                return Response(
+                    {'error': 'Товар не найден в корзине'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            cart_item.quantity = quantity
+            cart_item.save()
+
+            serializer = self.get_serializer(cart)
+            return Response({
+                'message': 'Количество товара успешно обновлено',
+                'cart': serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            return Response({
+                'error': 'Некорректное значение количества',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при обновлении количества товара'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class OrderViewSet(viewsets.ModelViewSet):

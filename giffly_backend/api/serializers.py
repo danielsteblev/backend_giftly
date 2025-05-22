@@ -28,13 +28,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         email = validated_data.pop('email')
         
         # Создаем пользователя с email в качестве username
-        user = User.objects.create_user(
-            username=email,  # Используем email как username
+        user = User(
+            username=email,
             email=email,
-            password=password,
             is_active=True,
             **validated_data
         )
+        user.set_password(password)
+        user.save()
         return user
 
 class ProductSerializer(serializers.ModelSerializer):

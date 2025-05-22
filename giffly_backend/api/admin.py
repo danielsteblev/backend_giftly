@@ -10,3 +10,5 @@ admin.site.register(Cart)
 admin.site.register(Order)
 admin.site.register(Favorite)
 admin.site.register(SalesStatistics)
+
+# тест

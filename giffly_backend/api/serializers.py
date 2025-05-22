@@ -38,10 +38,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            role='buyer'
+            role='buyer',
+            is_active=True
         )
-        user.is_active = True
-        user.save()
         return user
 
 class ProductSerializer(serializers.ModelSerializer):

@@ -18,19 +18,12 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    confirm_password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ('email', 'password', 'confirm_password', 'first_name', 'last_name', 'role', 'phone', 'birth_date')
-
-    def validate(self, data):
-        if data['password'] != data['confirm_password']:
-            raise serializers.ValidationError("Пароли не совпадают")
-        return data
+        fields = ('email', 'password', 'first_name', 'last_name', 'role', 'phone', 'birth_date')
 
     def create(self, validated_data):
-        validated_data.pop('confirm_password')
         password = validated_data.pop('password')
         email = validated_data.get('email')
         

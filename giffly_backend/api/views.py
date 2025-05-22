@@ -89,10 +89,11 @@ class UserViewSet(viewsets.ModelViewSet):
                         except Exception as auth_error:
                             print(f"Debug: Ошибка при получении токена через obtain_auth_token: {str(auth_error)}")
                         
+                        # Если все попытки создания токена не удались, возвращаем ошибку
                         return Response({
-                            'user': UserSerializer(user, context=self.get_serializer_context()).data,
-                            'message': 'Пользователь успешно зарегистрирован, но не удалось создать токен авторизации'
-                        }, status=status.HTTP_201_CREATED)
+                            'error': 'Не удалось создать токен авторизации',
+                            'message': 'Произошла ошибка при создании токена авторизации'
+                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             print(f"Debug: Ошибки валидации: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:

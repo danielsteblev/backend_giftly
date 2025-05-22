@@ -39,11 +39,8 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
                 user = serializer.save()
-                # Создаем или получаем существующий токен
-                token, _ = Token.objects.get_or_create(user=user)
                 return Response({
                     'user': UserSerializer(user, context=self.get_serializer_context()).data,
-                    'token': token.key,
                     'message': 'Пользователь успешно зарегистрирован'
                 }, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

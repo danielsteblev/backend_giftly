@@ -58,10 +58,31 @@ jobs:
           username: ${{ secrets.SERVER_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd /backend_giftly
+            # Проверяем наличие директории
+            if [ ! -d "/root/backend_giftly" ]; then
+              mkdir -p /root/backend_giftly
+            fi
+            
+            # Переходим в директорию
+            cd /root/backend_giftly
+            
+            # Клонируем репозиторий, если его нет
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/danielsteblev/backend_giftly.git .
+            fi
+            
+            # Обновляем код
             git pull origin main
-            pip install -r requirements.txt
-            python manage.py migrate
-            python manage.py collectstatic --noinput
-            docker-compose down
-            docker-compose up -d --build 
+            
+            # Устанавливаем зависимости
+            python3 -m pip install --upgrade pip
+            python3 -m pip install -r giffly_backend/requirements.txt
+            
+            # Применяем миграции
+            cd giffly_backend
+            python3 manage.py migrate
+            python3 manage.py collectstatic --noinput
+            
+            # Перезапускаем контейнеры
+            docker compose down
+            docker compose up -d --build 

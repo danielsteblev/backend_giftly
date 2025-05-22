@@ -17,29 +17,30 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'email']
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
-    email = serializers.EmailField(validators=[EmailValidator()])
-    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
-    
+    password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
-        fields = ['email', 'password', 'first_name', 'last_name']
-    
-    def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Пользователь с таким email уже существует")
-        return value
-    
+        fields = ('email', 'password', 'confirm_password', 'first_name', 'last_name', 'role', 'phone', 'birth_date')
+
+    def validate(self, data):
+        if data['password'] != data['confirm_password']:
+            raise serializers.ValidationError("Пароли не совпадают")
+        return data
+
     def create(self, validated_data):
+        validated_data.pop('confirm_password')
+        password = validated_data.pop('password')
+        email = validated_data.get('email')
+        
+        # Создаем пользователя с email в качестве username
         user = User.objects.create_user(
-            username=validated_data['email'],
-            email=validated_data['email'],
-            password=validated_data['password'],
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            role='buyer',
-            is_active=True
+            username=email,  # Устанавливаем email как username
+            email=email,
+            password=password,
+            is_active=True,
+            **validated_data
         )
         return user
 

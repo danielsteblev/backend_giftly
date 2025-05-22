@@ -36,22 +36,20 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[AllowAny])
     def register(self, request):
         try:
+            print("Debug: Начало регистрации")
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
+                print("Debug: Данные валидны")
                 user = serializer.save()
-                
-                # Проверяем, существует ли пользователь в auth_user
-                if not user.id:
-                    return Response(
-                        {'error': 'Ошибка аутентификации: пользователь не найден в системе'},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
+                print(f"Debug: Пользователь создан с ID: {user.id}")
                 
                 try:
+                    print("Debug: Попытка создания токена")
                     # Удаляем существующий токен, если он есть
                     Token.objects.filter(user=user).delete()
                     # Создаем новый токен
                     token = Token.objects.create(user=user)
+                    print(f"Debug: Токен создан: {token.key}")
                     
                     return Response({
                         'user': UserSerializer(user, context=self.get_serializer_context()).data,
@@ -59,23 +57,27 @@ class UserViewSet(viewsets.ModelViewSet):
                         'message': 'Пользователь успешно зарегистрирован'
                     }, status=status.HTTP_201_CREATED)
                 except Exception as token_error:
-                    print(f"Error creating token: {str(token_error)}")
+                    print(f"Debug: Ошибка при создании токена: {str(token_error)}")
                     # Если не удалось создать токен, пробуем получить существующий
                     try:
+                        print("Debug: Попытка получить существующий токен")
                         token = Token.objects.get(user=user)
+                        print(f"Debug: Получен существующий токен: {token.key}")
                         return Response({
                             'user': UserSerializer(user, context=self.get_serializer_context()).data,
                             'token': token.key,
                             'message': 'Пользователь успешно зарегистрирован'
                         }, status=status.HTTP_201_CREATED)
                     except Token.DoesNotExist:
+                        print("Debug: Токен не найден")
                         return Response({
                             'user': UserSerializer(user, context=self.get_serializer_context()).data,
                             'message': 'Пользователь успешно зарегистрирован, но не удалось создать токен авторизации'
                         }, status=status.HTTP_201_CREATED)
+            print(f"Debug: Ошибки валидации: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            print(f"Registration error: {str(e)}")
+            print(f"Debug: Ошибка при регистрации: {str(e)}")
             return Response({
                 'error': str(e),
                 'message': 'Произошла ошибка при регистрации пользователя'

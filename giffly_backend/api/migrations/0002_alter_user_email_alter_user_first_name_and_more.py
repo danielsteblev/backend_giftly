@@ -14,26 +14,26 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='user',
             name='email',
-            field=models.EmailField(blank=True, max_length=254, verbose_name='email address'),
+            field=models.EmailField(max_length=254, unique=True),
         ),
         migrations.AlterField(
             model_name='user',
             name='first_name',
-            field=models.CharField(blank=True, max_length=150, verbose_name='first name'),
+            field=models.CharField(blank=True, max_length=150, null=True),
         ),
         migrations.AlterField(
             model_name='user',
             name='groups',
-            field=models.ManyToManyField(blank=True, help_text='The groups this user belongs to. A user will get all permissions granted to each of their groups.', related_name='user_set', related_query_name='user', to='auth.group', verbose_name='groups'),
+            field=models.ManyToManyField(blank=True, related_name='custom_user_groups', to='auth.group'),
         ),
         migrations.AlterField(
             model_name='user',
             name='last_name',
-            field=models.CharField(blank=True, max_length=150, verbose_name='last name'),
+            field=models.CharField(blank=True, max_length=150, null=True),
         ),
         migrations.AlterField(
             model_name='user',
             name='user_permissions',
-            field=models.ManyToManyField(blank=True, help_text='Specific permissions for this user.', related_name='user_set', related_query_name='user', to='auth.permission', verbose_name='user permissions'),
+            field=models.ManyToManyField(blank=True, related_name='custom_user_permissions', to='auth.permission'),
         ),
     ]

@@ -169,6 +169,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Custom user model
 AUTH_USER_MODEL = 'api.User'
 
+# Настройки для работы с токенами
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 # Security settings
 SECURE_SSL_REDIRECT = False  # Отключаем для разработки
 SESSION_COOKIE_SECURE = False  # Отключаем для разработки

@@ -45,9 +45,16 @@ class UserViewSet(viewsets.ModelViewSet):
                 
                 try:
                     print("Debug: Попытка создания токена")
-                    # Создаем или получаем существующий токен
-                    token, created = Token.objects.get_or_create(user=user)
-                    print(f"Debug: Токен {'создан' if created else 'получен'}: {token.key}")
+                    # Удаляем существующий токен, если он есть
+                    Token.objects.filter(user=user).delete()
+                    
+                    # Создаем новый токен
+                    token = Token.objects.create(user=user)
+                    print(f"Debug: Токен создан: {token.key}")
+                    
+                    # Проверяем, что токен действительно создан
+                    if not token or not token.key:
+                        raise Exception("Токен не был создан")
                     
                     return Response({
                         'user': UserSerializer(user, context=self.get_serializer_context()).data,
@@ -56,10 +63,36 @@ class UserViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_201_CREATED)
                 except Exception as token_error:
                     print(f"Debug: Ошибка при создании токена: {str(token_error)}")
-                    return Response({
-                        'user': UserSerializer(user, context=self.get_serializer_context()).data,
-                        'message': 'Пользователь успешно зарегистрирован, но не удалось создать токен авторизации'
-                    }, status=status.HTTP_201_CREATED)
+                    # Если не удалось создать токен, пробуем получить существующий
+                    try:
+                        print("Debug: Попытка получить существующий токен")
+                        token = Token.objects.get(user=user)
+                        print(f"Debug: Получен существующий токен: {token.key}")
+                        return Response({
+                            'user': UserSerializer(user, context=self.get_serializer_context()).data,
+                            'token': token.key,
+                            'message': 'Пользователь успешно зарегистрирован'
+                        }, status=status.HTTP_201_CREATED)
+                    except Token.DoesNotExist:
+                        print("Debug: Токен не найден")
+                        # Если токен не найден, пробуем создать его через obtain_auth_token
+                        try:
+                            from rest_framework.authtoken.views import obtain_auth_token
+                            token_response = obtain_auth_token(request._request)
+                            if token_response.status_code == 200:
+                                token_data = token_response.data
+                                return Response({
+                                    'user': UserSerializer(user, context=self.get_serializer_context()).data,
+                                    'token': token_data.get('token'),
+                                    'message': 'Пользователь успешно зарегистрирован'
+                                }, status=status.HTTP_201_CREATED)
+                        except Exception as auth_error:
+                            print(f"Debug: Ошибка при получении токена через obtain_auth_token: {str(auth_error)}")
+                        
+                        return Response({
+                            'user': UserSerializer(user, context=self.get_serializer_context()).data,
+                            'message': 'Пользователь успешно зарегистрирован, но не удалось создать токен авторизации'
+                        }, status=status.HTTP_201_CREATED)
             print(f"Debug: Ошибки валидации: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:

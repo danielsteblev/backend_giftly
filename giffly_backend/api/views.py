@@ -40,19 +40,27 @@ class UserViewSet(viewsets.ModelViewSet):
             if serializer.is_valid():
                 user = serializer.save()
                 try:
-                    # Создаем токен для пользователя
-                    token = Token.objects.create(user=user)
+                    # Создаем или получаем существующий токен, как в методе login
+                    token, _ = Token.objects.get_or_create(user=user)
                     return Response({
                         'user': UserSerializer(user, context=self.get_serializer_context()).data,
                         'token': token.key,
                         'message': 'Пользователь успешно зарегистрирован'
                     }, status=status.HTTP_201_CREATED)
                 except Exception as token_error:
-                    # Если не удалось создать токен, возвращаем успешную регистрацию без токена
-                    return Response({
-                        'user': UserSerializer(user, context=self.get_serializer_context()).data,
-                        'message': 'Пользователь успешно зарегистрирован, но не удалось создать токен авторизации'
-                    }, status=status.HTTP_201_CREATED)
+                    # Если не удалось создать токен, пробуем войти как в методе login
+                    try:
+                        token, _ = Token.objects.get_or_create(user=user)
+                        return Response({
+                            'user': UserSerializer(user, context=self.get_serializer_context()).data,
+                            'token': token.key,
+                            'message': 'Пользователь успешно зарегистрирован'
+                        }, status=status.HTTP_201_CREATED)
+                    except Exception as login_error:
+                        return Response({
+                            'user': UserSerializer(user, context=self.get_serializer_context()).data,
+                            'message': 'Пользователь успешно зарегистрирован, но не удалось создать токен авторизации'
+                        }, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({

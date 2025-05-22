@@ -43,23 +43,16 @@ class UserViewSet(viewsets.ModelViewSet):
                 user = serializer.save()
                 print(f"Debug: Пользователь создан с ID: {user.id}")
                 
-                try:
-                    print("Debug: Попытка создания токена")
-                    # Создаем или получаем существующий токен
-                    token, created = Token.objects.get_or_create(user=user)
-                    print(f"Debug: Токен {'создан' if created else 'получен'}: {token.key}")
-                    
-                    return Response({
-                        'user': UserSerializer(user, context=self.get_serializer_context()).data,
-                        'token': token.key,
-                        'message': 'Пользователь успешно зарегистрирован'
-                    }, status=status.HTTP_201_CREATED)
-                except Exception as token_error:
-                    print(f"Debug: Ошибка при создании токена: {str(token_error)}")
-                    return Response({
-                        'error': 'Не удалось создать токен авторизации',
-                        'message': 'Произошла ошибка при создании токена авторизации'
-                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                # Создаем токен напрямую через Token.objects.create
+                token = Token.objects.create(user=user)
+                print(f"Debug: Токен создан: {token.key}")
+                
+                return Response({
+                    'user': UserSerializer(user, context=self.get_serializer_context()).data,
+                    'token': token.key,
+                    'message': 'Пользователь успешно зарегистрирован'
+                }, status=status.HTTP_201_CREATED)
+                
             print(f"Debug: Ошибки валидации: {serializer.errors}")
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:

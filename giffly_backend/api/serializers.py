@@ -21,14 +21,19 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('username', 'email', 'password', 'first_name', 'last_name', 'role')
+        fields = ('email', 'password', 'first_name', 'last_name', 'role')
 
     def create(self, validated_data):
         password = validated_data.pop('password')
+        email = validated_data.pop('email')
+        
+        # Создаем пользователя с email в качестве username
         user = User.objects.create_user(
-            **validated_data,
+            username=email,  # Используем email как username
+            email=email,
             password=password,
-            is_active=True
+            is_active=True,
+            **validated_data
         )
         return user
 

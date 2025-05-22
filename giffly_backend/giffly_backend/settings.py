@@ -17,13 +17,13 @@ ALLOWED_HOSTS = ['*']  # Разрешаем все хосты для разра�
 # Application definition
 
 INSTALLED_APPS = [
+    'api.apps.ApiConfig',  # Перемещаем наше приложение в начало
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'api.apps.ApiConfig',
     'rest_framework',
     'rest_framework.authtoken',
     'drf_yasg',

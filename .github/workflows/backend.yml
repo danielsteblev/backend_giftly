@@ -35,14 +35,13 @@ jobs:
       
       - name: Install dependencies
         run: |
+          cd giffly_backend
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
       - name: Run tests
-        env:
-          DATABASE_URL: postgres://postgres:1985@localhost:5432/giftly_db
-          DJANGO_SETTINGS_MODULE: giffly_backend.settings
         run: |
+          cd giffly_backend
           python manage.py test
 
   deploy:

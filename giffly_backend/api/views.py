@@ -38,20 +38,7 @@ class UserViewSet(viewsets.ModelViewSet):
         try:
             serializer = self.get_serializer(data=request.data)
             if serializer.is_valid():
-                # Создаем пользователя в auth_user
-                auth_user = AuthUser.objects.create_user(
-                    username=request.data['email'],
-                    email=request.data['email'],
-                    password=request.data['password']
-                )
-                
-                # Создаем пользователя в нашей модели
                 user = serializer.save()
-                
-                # Связываем пользователей
-                user.id = auth_user.id
-                user.save()
-                
                 return Response({
                     'user': UserSerializer(user, context=self.get_serializer_context()).data,
                     'message': 'Пользователь успешно зарегистрирован'

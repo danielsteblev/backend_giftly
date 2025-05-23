@@ -128,8 +128,8 @@ class FavoriteSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Favorite
-        fields = ['id', 'product', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        fields = ['id', 'product']
+        read_only_fields = ['id']
 
 class SalesStatisticsSerializer(serializers.ModelSerializer):
     class Meta:

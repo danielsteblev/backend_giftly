@@ -480,6 +480,79 @@ class FavoriteViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Favorite.objects.filter(user=self.request.user)
 
+    @action(detail=False, methods=['post'])
+    def add(self, request):
+        try:
+            product_id = request.data.get('product_id')
+            if not product_id:
+                return Response(
+                    {'error': 'ID товара обязателен'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                product = Product.objects.get(id=product_id)
+            except Product.DoesNotExist:
+                return Response(
+                    {'error': 'Товар не найден'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            favorite, created = Favorite.objects.get_or_create(
+                user=request.user,
+                product=product
+            )
+
+            if not created:
+                return Response(
+                    {'message': 'Товар уже в избранном'},
+                    status=status.HTTP_200_OK
+                )
+
+            serializer = self.get_serializer(favorite)
+            return Response({
+                'message': 'Товар успешно добавлен в избранное',
+                'favorite': serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при добавлении в избранное'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def remove(self, request):
+        try:
+            product_id = request.data.get('product_id')
+            if not product_id:
+                return Response(
+                    {'error': 'ID товара обязателен'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                favorite = Favorite.objects.get(
+                    user=request.user,
+                    product_id=product_id
+                )
+            except Favorite.DoesNotExist:
+                return Response(
+                    {'error': 'Товар не найден в избранном'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            favorite.delete()
+            return Response({
+                'message': 'Товар успешно удален из избранного'
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при удалении из избранного'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class SalesStatisticsViewSet(viewsets.ModelViewSet):
     serializer_class = SalesStatisticsSerializer
     permission_classes = [IsAuthenticated, IsSellerOrAdmin]

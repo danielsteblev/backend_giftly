@@ -639,8 +639,7 @@ class SalesStatisticsViewSet(viewsets.ModelViewSet):
                             'product_id': product.id,
                             'product_name': product.name,
                             'sales_count': 0,
-                            'total_revenue': 0,
-                            'average_rating': product.rating
+                            'total_revenue': 0
                         }
                     )
                     product_stat['sales_count'] += 1

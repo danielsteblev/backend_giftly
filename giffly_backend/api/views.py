@@ -388,6 +388,11 @@ class OrderViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        if self.request.user.role == 'seller':
+            # Получаем все заказы, где есть товары текущего продавца
+            return Order.objects.filter(
+                products__seller=self.request.user
+            ).distinct()
         return Order.objects.filter(user=self.request.user)
 
     @action(detail=False, methods=['get'])
@@ -399,7 +404,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
         
         # Получаем все заказы, где есть товары текущего продавца
-        orders = Order.objects.filter(products__seller=request.user).distinct()
+        orders = Order.objects.filter(
+            products__seller=request.user
+        ).distinct()
         serializer = self.get_serializer(orders, many=True)
         return Response(serializer.data)
 
@@ -456,7 +463,18 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def update_status(self, request, pk=None):
         try:
-            order = self.get_object()
+            # Получаем заказ и проверяем, есть ли в нем товары текущего продавца
+            order = Order.objects.filter(
+                id=pk,
+                products__seller=request.user
+            ).first()
+
+            if not order:
+                return Response(
+                    {'error': 'Заказ не найден или у вас нет прав на его обновление'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
             new_status = request.data.get('status')
 
             if not new_status:

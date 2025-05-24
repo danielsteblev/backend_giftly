@@ -592,3 +592,75 @@ class SalesStatisticsViewSet(viewsets.ModelViewSet):
         if self.request.user.role == 'seller':
             return SalesStatistics.objects.filter(seller=self.request.user)
         return SalesStatistics.objects.all()
+
+    @action(detail=False, methods=['get'])
+    def seller(self, request):
+        if request.user.role != 'seller':
+            return Response(
+                {'error': 'Доступ запрещен'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            # Получаем все заказы продавца
+            orders = Order.objects.filter(
+                products__seller=request.user
+            ).distinct()
+
+            # Рассчитываем общую сумму продаж
+            total_sales = sum(order.total_amount for order in orders)
+
+            # Получаем количество заказов
+            order_count = orders.count()
+
+            # Получаем статистику по дням
+            daily_stats = []
+            for order in orders:
+                date = order.created_at.date()
+                daily_stat = next(
+                    (stat for stat in daily_stats if stat['date'] == date),
+                    {'date': date, 'sales': 0, 'orders': 0}
+                )
+                daily_stat['sales'] += order.total_amount
+                daily_stat['orders'] += 1
+                if daily_stat not in daily_stats:
+                    daily_stats.append(daily_stat)
+
+            # Сортируем статистику по дням
+            daily_stats.sort(key=lambda x: x['date'])
+
+            # Получаем топ продуктов
+            top_products = []
+            for order in orders:
+                for product in order.products.filter(seller=request.user):
+                    product_stat = next(
+                        (stat for stat in top_products if stat['product_id'] == product.id),
+                        {
+                            'product_id': product.id,
+                            'product_name': product.name,
+                            'sales_count': 0,
+                            'total_revenue': 0,
+                            'average_rating': product.rating
+                        }
+                    )
+                    product_stat['sales_count'] += 1
+                    product_stat['total_revenue'] += product.price
+                    if product_stat not in top_products:
+                        top_products.append(product_stat)
+
+            # Сортируем продукты по количеству продаж
+            top_products.sort(key=lambda x: x['sales_count'], reverse=True)
+            top_products = top_products[:5]  # Берем только топ-5
+
+            return Response({
+                'total_sales': total_sales,
+                'order_count': order_count,
+                'daily_stats': daily_stats,
+                'top_products': top_products
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({
+                'error': str(e),
+                'message': 'Произошла ошибка при получении статистики'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -390,6 +390,19 @@ class OrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user)
 
+    @action(detail=False, methods=['get'])
+    def seller_orders(self, request):
+        if request.user.role != 'seller':
+            return Response(
+                {'error': 'Доступ запрещен'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Получаем все заказы, где есть товары текущего продавца
+        orders = Order.objects.filter(products__seller=request.user).distinct()
+        serializer = self.get_serializer(orders, many=True)
+        return Response(serializer.data)
+
     @action(detail=False, methods=['post'])
     def create_from_cart(self, request):
         try:

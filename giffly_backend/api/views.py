@@ -15,6 +15,7 @@ from .gift_service import GiftRecommendationService
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -716,9 +717,18 @@ def recommend_products(request):
     Получает рекомендации подарков с помощью DeepSeek API
     """
     try:
-        logger.info(f"Received recommend request with data: {request.data}")
+        # Получаем данные из тела запроса
+        try:
+            data = json.loads(request.body)
+            logger.info(f"Received recommend request with data: {data}")
+        except json.JSONDecodeError:
+            logger.error("Invalid JSON data received")
+            return Response(
+                {'error': 'Некорректный формат JSON'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         
-        query = request.data.get('query')
+        query = data.get('query')
         if not query:
             logger.warning("Query parameter is missing")
             return Response(

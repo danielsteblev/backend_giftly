@@ -25,6 +25,9 @@ services:
       - DEBUG=0
       - DJANGO_SETTINGS_MODULE=giffly_backend.settings
       - DATABASE_URL=postgres://postgres:1985@db:5432/giftly_db
+      - DEEPSEEK_API_KEY=sk-6e54ec81b2b24a8c856d273dc8654b97
+      - DEEPSEEK_API_URL=https://api.deepseek.com/chat/completions
+      - DEEPSEEK_MODEL=deepseek-chat
     depends_on:
       - db
     networks:

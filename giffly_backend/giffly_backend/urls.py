@@ -20,7 +20,8 @@ from rest_framework.routers import DefaultRouter
 from rest_framework.authtoken.views import obtain_auth_token
 from api.views import (
     UserViewSet, ProductViewSet, CartViewSet, OrderViewSet,
-    FavoriteViewSet, SalesStatisticsViewSet, HealthCheckView
+    FavoriteViewSet, SalesStatisticsViewSet, HealthCheckView,
+    recommend_products
 )
 
 router = DefaultRouter()
@@ -37,4 +38,5 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/health/', HealthCheckView.as_view(), name='health-check'),
     path('api/token/', obtain_auth_token, name='api_token_auth'),
+    path('api/recommend/', recommend_products, name='recommend-products'),
 ]

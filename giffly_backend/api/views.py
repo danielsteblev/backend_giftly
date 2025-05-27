@@ -1,5 +1,5 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from .models import User, Product, Cart, Order, Favorite, SalesStatistics, CartItem
@@ -709,3 +709,43 @@ class SalesStatisticsViewSet(viewsets.ModelViewSet):
                 'error': str(e),
                 'message': 'Произошла ошибка при получении статистики'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+def recommend_products(request):
+    """
+    Получает рекомендации подарков с помощью DeepSeek API
+    """
+    try:
+        logger.info(f"Received recommend request with data: {request.data}")
+        
+        query = request.data.get('query')
+        if not query:
+            logger.warning("Query parameter is missing")
+            return Response(
+                {'error': 'Поле query обязательно для заполнения'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        logger.info(f"Processing recommendation for query: {query}")
+        
+        # Получаем рекомендации
+        service = GiftRecommendationService()
+        result = service.get_recommendations(query)
+        
+        logger.info(f"Got recommendations result: {result}")
+
+        if not result['success']:
+            logger.error(f"Error getting recommendations: {result['error']}")
+            return Response(
+                {'error': result['error']},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return Response(result, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.exception("Unexpected error in recommend endpoint")
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

@@ -12,6 +12,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 from django.conf import settings
 from .gift_service import GiftRecommendationService
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
 class HealthCheckView(APIView):
     permission_classes = [AllowAny]
@@ -204,6 +206,7 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(recent_products, many=True)
         return Response(serializer.data)
 
+    @method_decorator(csrf_exempt)
     @action(detail=False, methods=['post'])
     def recommend(self, request):
         """

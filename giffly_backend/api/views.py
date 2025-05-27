@@ -11,6 +11,7 @@ from .permissions import IsSellerOrAdmin, IsOwner
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 from django.conf import settings
+from .gift_service import GiftRecommendationService
 
 class HealthCheckView(APIView):
     permission_classes = [AllowAny]
@@ -202,6 +203,37 @@ class ProductViewSet(viewsets.ModelViewSet):
         recent_products = Product.objects.order_by('-created_at')[:5]
         serializer = self.get_serializer(recent_products, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['post'])
+    def recommend(self, request):
+        """
+        Получает рекомендации подарков с помощью DeepSeek API
+        """
+        try:
+            query = request.data.get('query')
+            if not query:
+                return Response(
+                    {'error': 'Поле query обязательно для заполнения'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Получаем рекомендации
+            service = GiftRecommendationService()
+            result = service.get_recommendations(query)
+
+            if not result['success']:
+                return Response(
+                    {'error': result['error']},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            return Response(result, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class CartViewSet(viewsets.ModelViewSet):
     serializer_class = CartSerializer

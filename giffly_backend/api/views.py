@@ -14,6 +14,9 @@ from django.conf import settings
 from .gift_service import GiftRecommendationService
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+import logging
+
+logger = logging.getLogger(__name__)
 
 class HealthCheckView(APIView):
     permission_classes = [AllowAny]
@@ -206,24 +209,32 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(recent_products, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], url_path='recommend', url_name='recommend')
     def recommend(self, request):
         """
         Получает рекомендации подарков с помощью DeepSeek API
         """
         try:
+            logger.info(f"Received recommend request with data: {request.data}")
+            
             query = request.data.get('query')
             if not query:
+                logger.warning("Query parameter is missing")
                 return Response(
                     {'error': 'Поле query обязательно для заполнения'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
+            logger.info(f"Processing recommendation for query: {query}")
+            
             # Получаем рекомендации
             service = GiftRecommendationService()
             result = service.get_recommendations(query)
+            
+            logger.info(f"Got recommendations result: {result}")
 
             if not result['success']:
+                logger.error(f"Error getting recommendations: {result['error']}")
                 return Response(
                     {'error': result['error']},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -232,6 +243,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             return Response(result, status=status.HTTP_200_OK)
 
         except Exception as e:
+            logger.exception("Unexpected error in recommend endpoint")
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

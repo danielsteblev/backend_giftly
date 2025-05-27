@@ -33,9 +33,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',  # Добавляем middleware для CORS
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -181,3 +180,11 @@ CSRF_COOKIE_SECURE = False  # Отключаем для разработки
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
+
+# Добавим настройки для CORS и CSRF
+CORS_ALLOW_ALL_ORIGINS = True  # Для разработки
+CORS_ALLOW_CREDENTIALS = True
+
+# Отключаем CSRF для API
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000', 'http://127.0.0.1:8000']  # Добавьте ваш домен
+CSRF_COOKIE_SECURE = False  # Для разработки

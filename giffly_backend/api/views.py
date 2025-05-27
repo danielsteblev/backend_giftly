@@ -126,7 +126,6 @@ class UserViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         serializer.save()
 
-@method_decorator(csrf_exempt, name='dispatch')
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
@@ -207,7 +206,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(recent_products, many=True)
         return Response(serializer.data)
 
-    @method_decorator(csrf_exempt)
     @action(detail=False, methods=['post'])
     def recommend(self, request):
         """

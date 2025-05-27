@@ -717,18 +717,20 @@ def recommend_products(request):
     Получает рекомендации подарков с помощью DeepSeek API
     """
     try:
-        # Получаем данные из тела запроса
-        try:
-            data = json.loads(request.body)
-            logger.info(f"Received recommend request with data: {data}")
-        except json.JSONDecodeError:
-            logger.error("Invalid JSON data received")
+        logger.info(f"Request content type: {request.content_type}")
+        logger.info(f"Request body: {request.body}")
+        logger.info(f"Request data type: {type(request.data)}")
+        logger.info(f"Request data: {request.data}")
+        
+        # Проверяем, что данные пришли как словарь
+        if not isinstance(request.data, dict):
+            logger.error(f"Invalid data type received: {type(request.data)}")
             return Response(
-                {'error': 'Некорректный формат JSON'},
+                {'error': 'Некорректный формат данных'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        query = data.get('query')
+        query = request.data.get('query')
         if not query:
             logger.warning("Query parameter is missing")
             return Response(

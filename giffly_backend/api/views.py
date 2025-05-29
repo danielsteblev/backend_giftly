@@ -210,13 +210,14 @@ class ProductViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(recent_products, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['post'], url_path='recommend', url_name='recommend')
-    def recommend(self, request):
+    @action(detail=False, methods=['post'], url_path='chat-recommend', url_name='chat-recommend')
+    def chat_recommend(self, request):
         """
-        Получает рекомендации подарков с помощью DeepSeek API
+        Получает рекомендации букетов через чат-интерфейс
+        Пример запроса: {"query": "Зарекомендуй букет на свадьбу"}
         """
         try:
-            logger.info(f"Received recommend request with data: {request.data}")
+            logger.info(f"Received chat recommend request with data: {request.data}")
             
             query = request.data.get('query')
             if not query:
@@ -226,16 +227,16 @@ class ProductViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            logger.info(f"Processing recommendation for query: {query}")
+            logger.info(f"Processing chat recommendation for query: {query}")
             
             # Получаем рекомендации
             service = GiftRecommendationService()
             result = service.get_recommendations(query)
             
-            logger.info(f"Got recommendations result: {result}")
+            logger.info(f"Got chat recommendations result: {result}")
 
             if not result['success']:
-                logger.error(f"Error getting recommendations: {result['error']}")
+                logger.error(f"Error getting chat recommendations: {result['error']}")
                 return Response(
                     {'error': result['error']},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -244,7 +245,7 @@ class ProductViewSet(viewsets.ModelViewSet):
             return Response(result, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.exception("Unexpected error in recommend endpoint")
+            logger.exception("Unexpected error in chat recommend endpoint")
             return Response(
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -714,7 +715,7 @@ class SalesStatisticsViewSet(viewsets.ModelViewSet):
 @api_view(['POST'])
 def recommend_products(request):
     """
-    Получает рекомендации подарков с помощью DeepSeek API
+    Получает рекомендации подарков на основе поиска по ключевым словам
     """
     try:
         logger.info(f"Request content type: {request.content_type}")

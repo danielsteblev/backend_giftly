@@ -1,92 +1,109 @@
 import os
-import requests
 from django.conf import settings
+from django.core.cache import cache
 from .models import Product
 from .serializers import ProductSerializer
+import re
 
 class GiftRecommendationService:
     def __init__(self):
-        self.api_key = os.getenv('DEEPSEEK_API_KEY')
-        self.api_url = "https://api.deepseek.com/chat/completions"  # Официальный URL DeepSeek API
+        self.cache_timeout = 3600  # 1 час кэширования
+        
+    def _get_cached_recommendations(self, query: str) -> dict:
+        """Получает рекомендации из кэша"""
+        cache_key = f"recommendations_{query.lower().strip()}"
+        return cache.get(cache_key)
+        
+    def _cache_recommendations(self, query: str, recommendations: dict):
+        """Сохраняет рекомендации в кэш"""
+        cache_key = f"recommendations_{query.lower().strip()}"
+        cache.set(cache_key, recommendations, self.cache_timeout)
+        
+    def _extract_keywords(self, query: str) -> list:
+        """Извлекает ключевые слова из запроса"""
+        # Удаляем знаки препинания и приводим к нижнему регистру
+        query = re.sub(r'[^\w\s]', '', query.lower())
+        # Разбиваем на слова и удаляем стоп-слова
+        stop_words = {'что', 'какой', 'какая', 'какие', 'как', 'для', 'на', 'в', 'и', 'или', 'а', 'но', 'по', 'с', 'от', 'к', 'у', 'о', 'об', 'за', 'под', 'над', 'перед', 'после', 'между', 'через', 'без', 'до', 'при', 'про', 'со', 'во', 'не', 'ни', 'же', 'бы', 'ли', 'быть', 'есть', 'был', 'была', 'были', 'было'}
+        words = query.split()
+        return [word for word in words if word not in stop_words and len(word) > 2]
+        
+    def _find_matching_products(self, keywords: list) -> list:
+        """Находит товары, соответствующие ключевым словам"""
+        products = Product.objects.all()
+        matching_products = []
+        
+        for product in products:
+            # Проверяем совпадение в названии и описании
+            product_text = f"{product.name.lower()} {product.description.lower()}"
+            matches = sum(1 for keyword in keywords if keyword in product_text)
+            if matches > 0:
+                matching_products.append({
+                    'product': product,
+                    'match_score': matches / len(keywords)  # Нормализованный score
+                })
+        
+        # Сортируем по score и берем топ-5
+        matching_products.sort(key=lambda x: x['match_score'], reverse=True)
+        return matching_products[:5]
         
     def get_recommendations(self, query: str) -> dict:
         """
         Получает рекомендации подарков на основе запроса пользователя
         
         Args:
-            query (str): Запрос пользователя (например, "Что подарить на свадьбу?")
+            query (str): Запрос пользователя (например, "Зарекомендуй букет на свадьбу")
             
         Returns:
             dict: Словарь с результатами запроса
         """
         try:
-            # Проверяем API ключ
-            if not self.api_key:
+            # Проверяем кэш
+            cached_result = self._get_cached_recommendations(query)
+            if cached_result:
+                return cached_result
+
+            # Извлекаем ключевые слова
+            keywords = self._extract_keywords(query)
+            if not keywords:
                 return {
                     'success': False,
-                    'error': 'API ключ не настроен. Добавьте DEEPSEEK_API_KEY в .env файл'
+                    'error': 'Не удалось определить ключевые слова в запросе'
                 }
 
-            # Получаем товары из базы данных
-            products = Product.objects.all()
-            products_data = ProductSerializer(products, many=True).data
-
-            # Формируем промпт для API
-            products_text = "\n".join([
-                f"{i+1}. {p['name']} — {p['description']} (Цена: {p['price']} руб.)"
-                for i, p in enumerate(products_data)
-            ])
-
-            prompt = f"""У меня есть список товаров с описаниями:
-
-{products_text}
-
-Вопрос: {query}
-
-Пожалуйста, проанализируй список товаров и дай рекомендации по подарку. 
-Учитывай описание товаров и контекст вопроса.
-Ответ должен быть структурированным и содержать конкретные рекомендации из списка товаров.
-Для каждого рекомендованного товара укажи его номер из списка."""
-
-            # Отправляем запрос к API
-            response = requests.post(
-                self.api_url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": "deepseek-chat",  # Официальная модель DeepSeek
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful gift recommendation assistant."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.7,
-                    "max_tokens": 1000,
-                    "stream": False
-                },
-                timeout=30
-            )
-
-            # Проверяем ответ
-            response.raise_for_status()
-            result = response.json()
+            # Ищем подходящие товары
+            matching_products = self._find_matching_products(keywords)
             
-            # Получаем рекомендации из ответа
-            recommendations = result["choices"][0]["message"]["content"]
-            
-            return {
+            if not matching_products:
+                return {
+                    'success': True,
+                    'query': query,
+                    'message': 'К сожалению, не удалось найти подходящие букеты по вашему запросу. Попробуйте изменить формулировку.',
+                    'products': []
+                }
+
+            # Формируем ответ
+            products_data = []
+            for match in matching_products:
+                product = match['product']
+                serializer = ProductSerializer(product)
+                products_data.append({
+                    'product': serializer.data,
+                    'relevance': round(match['match_score'] * 100)  # Процент релевантности
+                })
+
+            result = {
                 'success': True,
                 'query': query,
-                'recommendations': recommendations,
-                'products_count': len(products_data)
+                'message': 'Вот подходящие букеты по вашему запросу:',
+                'products': products_data
             }
 
-        except requests.exceptions.RequestException as e:
-            return {
-                'success': False,
-                'error': f'Ошибка при обращении к API: {str(e)}'
-            }
+            # Кэшируем результат
+            self._cache_recommendations(query, result)
+            
+            return result
+
         except Exception as e:
             return {
                 'success': False,

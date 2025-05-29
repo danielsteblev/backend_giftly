@@ -4,6 +4,9 @@ from django.core.cache import cache
 from .models import Product
 from .serializers import ProductSerializer
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GiftRecommendationService:
     def __init__(self):
@@ -21,6 +24,13 @@ class GiftRecommendationService:
             'торжество': ['праздник', 'праздничный', 'праздничная', 'праздничные'],
             'юбилей': ['юбилейный', 'юбилейная', 'юбилейные'],
             'день рождения': ['день рождения', 'днюха', 'именины'],
+        }
+        
+        # Стоп-слова, которые не должны удаляться, если они являются частью важных фраз
+        self.protected_words = {
+            'подарить': ['подарить', 'подарок', 'подарки'],
+            'на': ['на свадьбу', 'на день рождения', 'на юбилей'],
+            'для': ['для свадьбы', 'для невесты', 'для жениха'],
         }
         
     def _get_cached_recommendations(self, query: str) -> dict:
@@ -49,21 +59,43 @@ class GiftRecommendationService:
         # Удаляем знаки препинания и приводим к нижнему регистру
         query = re.sub(r'[^\w\s]', '', query.lower())
         
-        # Разбиваем на слова и удаляем стоп-слова
-        stop_words = {'что', 'какой', 'какая', 'какие', 'как', 'для', 'на', 'в', 'и', 'или', 'а', 'но', 'по', 'с', 'от', 'к', 'у', 'о', 'об', 'за', 'под', 'над', 'перед', 'после', 'между', 'через', 'без', 'до', 'при', 'про', 'со', 'во', 'не', 'ни', 'же', 'бы', 'ли', 'быть', 'есть', 'был', 'была', 'были', 'было', 'подарить', 'подарок', 'дарить'}
+        # Разбиваем на слова
+        words = query.split()
         
-        # Разбиваем на слова и обрабатываем составные слова
-        words = []
-        for word in query.split():
+        # Сначала ищем защищенные фразы
+        protected_phrases = []
+        for i in range(len(words)):
+            for protected_word, phrases in self.protected_words.items():
+                if words[i] == protected_word and i + 1 < len(words):
+                    phrase = f"{words[i]} {words[i+1]}"
+                    if phrase in phrases:
+                        protected_phrases.append(phrase)
+        
+        # Базовые стоп-слова
+        stop_words = {'что', 'какой', 'какая', 'какие', 'как', 'в', 'и', 'или', 'а', 'но', 'по', 'с', 'от', 'к', 'у', 'о', 'об', 'за', 'под', 'над', 'перед', 'после', 'между', 'через', 'без', 'до', 'при', 'про', 'со', 'во', 'не', 'ни', 'же', 'бы', 'ли', 'быть', 'есть', 'был', 'была', 'были', 'было'}
+        
+        # Собираем ключевые слова
+        keywords = []
+        
+        # Добавляем защищенные фразы
+        keywords.extend(protected_phrases)
+        
+        # Добавляем остальные слова, исключая стоп-слова
+        for word in words:
             if word not in stop_words and len(word) > 2:
                 # Проверяем составные слова (например, "день рождения")
-                if word == 'день' and 'рождения' in query.split():
-                    words.append('день рождения')
+                if word == 'день' and 'рождения' in words:
+                    keywords.append('день рождения')
                 else:
-                    words.append(word)
+                    keywords.append(word)
         
         # Расширяем ключевые слова синонимами
-        return self._expand_keywords(words)
+        expanded_keywords = self._expand_keywords(keywords)
+        
+        logger.info(f"Extracted keywords: {keywords}")
+        logger.info(f"Expanded keywords: {expanded_keywords}")
+        
+        return expanded_keywords
         
     def _find_matching_products(self, keywords: list) -> list:
         """Находит товары, соответствующие ключевым словам"""
@@ -82,10 +114,13 @@ class GiftRecommendationService:
                     # Дополнительные очки за совпадение в названии
                     if keyword in product.name.lower():
                         matches += 0.5
+                    # Дополнительные очки за точное совпадение фразы
+                    if len(keyword.split()) > 1 and keyword in product_text:
+                        matches += 0.5
             
             if matches > 0:
                 # Нормализуем score с учетом количества ключевых слов
-                score = matches / (len(keywords) * 1.5)  # Уменьшаем вес количества ключевых слов
+                score = matches / (len(keywords) * 1.2)  # Уменьшаем вес количества ключевых слов
                 matching_products.append({
                     'product': product,
                     'match_score': score
@@ -153,6 +188,7 @@ class GiftRecommendationService:
             return result
 
         except Exception as e:
+            logger.exception("Error in get_recommendations")
             return {
                 'success': False,
                 'error': f'Произошла ошибка: {str(e)}'

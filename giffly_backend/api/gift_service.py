@@ -100,19 +100,26 @@ class GigaChatService:
         for attempt in range(self.max_retries):
             try:
                 prompt = f"""
-                Проанализируй запрос пользователя и выдели следующие аспекты:
-                1. Основная тема (свадьба, день рождения и т.д.)
-                2. Тип букета (свадебный, праздничный и т.д.)
+                Проанализируй запрос пользователя и выдели следующие аспекты. ВАЖНО: Не добавляй свадебную тематику, если она явно не указана в запросе!
+                
+                1. Основная тема (только если явно указана: свадьба, день рождения и т.д.)
+                2. Тип букета (только если явно указан: свадебный, праздничный и т.д.)
                 3. Предпочтения по цветам
                 4. Бюджет (если указан)
                 5. Особые пожелания
                 
                 Запрос: {query}
                 
+                Правила анализа:
+                - Если в запросе нет слов "свадьба", "свадебный", "невеста", "жених" - НЕ указывай свадебную тематику
+                - Если в запросе нет явного указания на тип букета - оставь поле type пустым
+                - Если в запросе нет явного указания на тему - оставь поле theme пустым
+                - В keywords включай ТОЛЬКО те слова, которые явно присутствуют в запросе или их прямые синонимы
+                
                 Ответ дай в формате JSON со следующими полями:
                 {{
-                    "theme": "основная тема",
-                    "type": "тип букета",
+                    "theme": "основная тема или null",
+                    "type": "тип букета или null",
                     "colors": ["предпочтительные цвета"],
                     "budget": "бюджет или null",
                     "special_requests": ["особые пожелания"],
@@ -143,7 +150,20 @@ class GigaChatService:
                 
                 try:
                     result = json.loads(content)
-                    logger.info(f"Parsed GigaChat result: {result}")
+                    
+                    # Дополнительная проверка и очистка результата
+                    if not any(word in query.lower() for word in ['свадьба', 'свадебный', 'невеста', 'жених']):
+                        if result.get('theme') and any(word in result['theme'].lower() for word in ['свадьба', 'свадебный', 'невеста']):
+                            result['theme'] = None
+                        if result.get('type') and any(word in result['type'].lower() for word in ['свадьба', 'свадебный', 'невеста']):
+                            result['type'] = None
+                        # Очищаем keywords от свадебных слов
+                        if 'keywords' in result:
+                            result['keywords'] = [k for k in result['keywords'] 
+                                                if k and not any(word in k.lower() 
+                                                for word in ['свадьба', 'свадебный', 'невеста', 'жених'])]
+                    
+                    logger.info(f"Parsed and cleaned GigaChat result: {result}")
                     return result
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse GigaChat response as JSON: {e}")
@@ -489,6 +509,22 @@ class GiftRecommendationService:
         # Получаем AI анализ для контекста
         ai_analysis = self.gigachat_service.analyze_query(" ".join(keywords))
         
+        # Проверяем наличие свадебного контекста в запросе
+        has_wedding_context = any(word in ' '.join(keywords).lower() for word in ['свадьба', 'свадебный', 'невеста', 'жених'])
+        
+        # Если нет свадебного контекста, очищаем AI анализ от свадебной тематики
+        if not has_wedding_context and ai_analysis:
+            if 'theme' in ai_analysis and ai_analysis['theme']:
+                if any(word in ai_analysis['theme'].lower() for word in ['свадьба', 'свадебный', 'невеста']):
+                    ai_analysis['theme'] = None
+            if 'type' in ai_analysis and ai_analysis['type']:
+                if any(word in ai_analysis['type'].lower() for word in ['свадьба', 'свадебный', 'невеста']):
+                    ai_analysis['type'] = None
+            if 'keywords' in ai_analysis:
+                ai_analysis['keywords'] = [k for k in ai_analysis['keywords'] 
+                                         if k and not any(word in k.lower() 
+                                         for word in ['свадьба', 'свадебный', 'невеста', 'жених'])]
+        
         # Извлекаем бюджет из AI анализа и напрямую из запроса
         budget = None
         if ai_analysis and 'budget' in ai_analysis:
@@ -514,6 +550,12 @@ class GiftRecommendationService:
             try:
                 product_price = float(product.price)
                 if budget is None or product_price <= budget:
+                    # Если нет свадебного контекста, пропускаем свадебные букеты
+                    if not has_wedding_context:
+                        product_text = f"{product.name.lower()} {product.description.lower()}"
+                        if any(word in product_text for word in ['свадьба', 'свадебный', 'невеста']):
+                            logger.info(f"Skipping wedding bouquet {product.name} - no wedding context in query")
+                            continue
                     filtered_products.append(product)
                     logger.info(f"Product {product.name} (price: {product_price}) within budget {budget}")
                 else:
@@ -526,9 +568,6 @@ class GiftRecommendationService:
             product_text = f"{product.name.lower()} {product.description.lower()}"
             matches = 0
             max_possible_matches = len(keywords)
-            
-            # Проверяем наличие свадебного контекста в запросе
-            has_wedding_context = any(word in ' '.join(keywords).lower() for word in ['свадьба', 'свадебный', 'невеста', 'жених'])
             
             # Рассчитываем релевантность по цветам
             flower_relevance = self._calculate_flower_relevance(product_text, keywords)
@@ -548,21 +587,6 @@ class GiftRecommendationService:
                     # Дополнительные очки за точное совпадение фразы
                     if len(keyword.split()) > 1 and keyword in product_text:
                         matches += 0.3
-                    
-                    # Дополнительные очки за свадебную тематику только если она явно указана
-                    if has_wedding_context and any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста']):
-                        matches += 0.3
-                    elif not has_wedding_context and any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста']):
-                        matches -= 0.2  # Штраф за свадебную тематику, если она не запрошена
-                        
-                    # Дополнительные очки за совпадение с AI анализом
-                    if ai_analysis:
-                        if 'type' in ai_analysis and ai_analysis['type'] and ai_analysis['type'] in product_text:
-                            if has_wedding_context or 'свадьба' not in ai_analysis['type'].lower():
-                                matches += 0.2
-                        if 'theme' in ai_analysis and ai_analysis['theme'] and ai_analysis['theme'] in product_text:
-                            if has_wedding_context or 'свадьба' not in ai_analysis['theme'].lower():
-                                matches += 0.2
             
             if matches > 0 or flower_relevance > 0:
                 # Базовый score с учетом релевантности цветов
@@ -577,10 +601,6 @@ class GiftRecommendationService:
                             base_score *= 1.1
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error adjusting score by budget: {e}")
-                
-                # Штраф за свадебную тематику, если она не запрошена
-                if not has_wedding_context and any(word in product_text for word in ['свадьба', 'свадебный', 'невеста']):
-                    base_score *= 0.7
                 
                 matching_products.append({
                     'product': product,

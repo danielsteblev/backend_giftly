@@ -343,15 +343,32 @@ class GiftRecommendationService:
                 r'стоимостью\s+до\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
                 r'бюджет\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
                 r'(\d+)\s*(?:руб|₽|рублей|рубля)\s+максимум',
-                r'не\s+дороже\s+(\d+)\s*(?:руб|₽|рублей|рубля)?'
+                r'не\s+дороже\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                # Новые паттерны
+                r'с\s+бюджет\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'бюджетом\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'в\s+пределах\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'примерно\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'около\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'за\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'по\s+цене\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'стоимость\s+(\d+)\s*(?:руб|₽|рублей|рубля)?'
             ]
             
             for pattern in budget_patterns:
                 match = re.search(pattern, query.lower())
                 if match:
                     budget = int(match.group(1))
-                    logger.info(f"Extracted budget from query: {budget}")
+                    logger.info(f"Extracted budget from query using pattern '{pattern}': {budget}")
                     return budget
+                    
+            # Если не нашли по паттернам, ищем просто число после слова "бюджет"
+            budget_match = re.search(r'бюджет\s+(\d+)', query.lower())
+            if budget_match:
+                budget = int(budget_match.group(1))
+                logger.info(f"Extracted budget using fallback pattern: {budget}")
+                return budget
+                
             return None
         except Exception as e:
             logger.error(f"Error extracting budget from query: {e}")
@@ -386,8 +403,24 @@ class GiftRecommendationService:
                 # Обновляем AI анализ с найденным бюджетом
                 if ai_analysis:
                     ai_analysis['budget'] = str(budget)
+                    logger.info(f"Updated AI analysis with extracted budget: {budget}")
         
+        # Фильтруем продукты по бюджету перед подсчетом релевантности
+        filtered_products = []
         for product in products:
+            try:
+                product_price = float(product.price)
+                if budget is None or product_price <= budget:
+                    filtered_products.append(product)
+                    logger.info(f"Product {product.name} (price: {product_price}) within budget {budget}")
+                else:
+                    logger.info(f"Skipping product {product.name} - price {product_price} exceeds budget {budget}")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error comparing prices for product {product.name}: {e}")
+                continue
+        
+        # Теперь работаем только с отфильтрованными продуктами
+        for product in filtered_products:
             product_text = f"{product.name.lower()} {product.description.lower()}"
             matches = 0
             max_possible_matches = len(keywords)

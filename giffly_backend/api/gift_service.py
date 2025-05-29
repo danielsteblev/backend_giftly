@@ -380,17 +380,34 @@ class GiftRecommendationService:
         # Объединяем результаты базового анализа и AI
         keywords = set()
         
-        # Добавляем ключевые слова из AI анализа
+        # Добавляем ключевые слова из AI анализа только если они явно указаны в запросе
         if ai_analysis:
+            # Проверяем, есть ли свадебная тематика в исходном запросе
+            has_wedding_context = any(word in query.lower() for word in ['свадьба', 'свадебный', 'невеста', 'жених'])
+            
             if 'keywords' in ai_analysis and ai_analysis['keywords']:
-                logger.info(f"Adding keywords from AI: {ai_analysis['keywords']}")
-                keywords.update(k for k in ai_analysis['keywords'] if k is not None)
+                # Фильтруем свадебные ключевые слова, если их нет в запросе
+                filtered_keywords = []
+                for k in ai_analysis['keywords']:
+                    if k is None:
+                        continue
+                    if not has_wedding_context and any(wedding_word in k.lower() for wedding_word in ['свадьба', 'свадебный', 'невеста', 'жених']):
+                        continue
+                    filtered_keywords.append(k)
+                logger.info(f"Adding filtered keywords from AI: {filtered_keywords}")
+                keywords.update(filtered_keywords)
+            
+            # Добавляем тип и тему только если они не свадебные или свадьба явно указана
             if 'type' in ai_analysis and ai_analysis['type']:
-                logger.info(f"Adding type from AI: {ai_analysis['type']}")
-                keywords.add(ai_analysis['type'])
+                if has_wedding_context or not any(wedding_word in ai_analysis['type'].lower() for wedding_word in ['свадьба', 'свадебный', 'невеста']):
+                    logger.info(f"Adding type from AI: {ai_analysis['type']}")
+                    keywords.add(ai_analysis['type'])
+            
             if 'theme' in ai_analysis and ai_analysis['theme']:
-                logger.info(f"Adding theme from AI: {ai_analysis['theme']}")
-                keywords.add(ai_analysis['theme'])
+                if has_wedding_context or not any(wedding_word in ai_analysis['theme'].lower() for wedding_word in ['свадьба', 'свадебный', 'невеста']):
+                    logger.info(f"Adding theme from AI: {ai_analysis['theme']}")
+                    keywords.add(ai_analysis['theme'])
+            
             if 'colors' in ai_analysis and ai_analysis['colors']:
                 logger.info(f"Adding colors from AI: {ai_analysis['colors']}")
                 keywords.update(c for c in ai_analysis['colors'] if c is not None)
@@ -401,6 +418,9 @@ class GiftRecommendationService:
                 phrase = f"{words[i]} {words[i+1]}"
                 for main_word, phrases in self.protected_phrases.items():
                     if phrase in phrases:
+                        # Проверяем контекст для свадебных фраз
+                        if 'свадьба' in main_word.lower() and not any(wedding_word in query.lower() for wedding_word in ['свадьба', 'свадебный', 'невеста', 'жених']):
+                            continue
                         logger.info(f"Adding protected phrase: {phrase} -> {main_word}")
                         keywords.add(phrase)
                         keywords.add(main_word)
@@ -507,6 +527,9 @@ class GiftRecommendationService:
             matches = 0
             max_possible_matches = len(keywords)
             
+            # Проверяем наличие свадебного контекста в запросе
+            has_wedding_context = any(word in ' '.join(keywords).lower() for word in ['свадьба', 'свадебный', 'невеста', 'жених'])
+            
             # Рассчитываем релевантность по цветам
             flower_relevance = self._calculate_flower_relevance(product_text, keywords)
             
@@ -526,16 +549,20 @@ class GiftRecommendationService:
                     if len(keyword.split()) > 1 and keyword in product_text:
                         matches += 0.3
                     
-                    # Дополнительные очки за свадебную тематику (меньший приоритет)
-                    if any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста']):
+                    # Дополнительные очки за свадебную тематику только если она явно указана
+                    if has_wedding_context and any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста']):
                         matches += 0.3
+                    elif not has_wedding_context and any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста']):
+                        matches -= 0.2  # Штраф за свадебную тематику, если она не запрошена
                         
                     # Дополнительные очки за совпадение с AI анализом
                     if ai_analysis:
                         if 'type' in ai_analysis and ai_analysis['type'] and ai_analysis['type'] in product_text:
-                            matches += 0.2
+                            if has_wedding_context or 'свадьба' not in ai_analysis['type'].lower():
+                                matches += 0.2
                         if 'theme' in ai_analysis and ai_analysis['theme'] and ai_analysis['theme'] in product_text:
-                            matches += 0.2
+                            if has_wedding_context or 'свадьба' not in ai_analysis['theme'].lower():
+                                matches += 0.2
             
             if matches > 0 or flower_relevance > 0:
                 # Базовый score с учетом релевантности цветов
@@ -551,12 +578,16 @@ class GiftRecommendationService:
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error adjusting score by budget: {e}")
                 
+                # Штраф за свадебную тематику, если она не запрошена
+                if not has_wedding_context and any(word in product_text for word in ['свадьба', 'свадебный', 'невеста']):
+                    base_score *= 0.7
+                
                 matching_products.append({
                     'product': product,
                     'match_score': base_score,
                     'ai_analysis': ai_analysis,
                     'budget_match': True if budget is not None else None,
-                    'flower_relevance': flower_relevance  # Добавляем информацию о релевантности цветов
+                    'flower_relevance': flower_relevance
                 })
         
         # Сортируем по убыванию релевантности

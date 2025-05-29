@@ -179,6 +179,50 @@ class GiftRecommendationService:
         self.cache_timeout = 3600  # 1 час кэширования
         self.gigachat_service = GigaChatService()
         
+        # Словарь цветов и их синонимов
+        self.flower_types = {
+            'розы': {
+                'keywords': ['роза', 'розы', 'розовый', 'розовая', 'розовые'],
+                'varieties': ['пионовидные', 'кустовые', 'маритим', 'барбадос', 'классические'],
+                'weight': 2.0  # Базовый вес для роз
+            },
+            'лилии': {
+                'keywords': ['лилия', 'лилии', 'лилейный', 'лилейная'],
+                'varieties': ['белые', 'розовые', 'оранжевые', 'тигровые'],
+                'weight': 1.8
+            },
+            'пионы': {
+                'keywords': ['пион', 'пионы', 'пионовидный', 'пионовидная'],
+                'varieties': ['розовые', 'белые', 'бордовые'],
+                'weight': 1.8
+            },
+            'гортензии': {
+                'keywords': ['гортензия', 'гортензии', 'гортензиевый'],
+                'varieties': ['синие', 'розовые', 'белые', 'фиолетовые'],
+                'weight': 1.5
+            },
+            'тюльпаны': {
+                'keywords': ['тюльпан', 'тюльпаны', 'тюльпановый'],
+                'varieties': ['красные', 'розовые', 'белые', 'желтые'],
+                'weight': 1.5
+            },
+            'орхидеи': {
+                'keywords': ['орхидея', 'орхидеи', 'орхидейный'],
+                'varieties': ['фаленопсис', 'цимбидиум', 'дендробиум'],
+                'weight': 1.7
+            }
+        }
+        
+        # Словарь цветовых сочетаний
+        self.color_combinations = {
+            'классический': ['красный', 'белый', 'зеленый'],
+            'романтический': ['розовый', 'белый', 'пастельный'],
+            'свадебный': ['белый', 'кремовый', 'нежно-розовый'],
+            'яркий': ['красный', 'оранжевый', 'желтый'],
+            'нежный': ['розовый', 'сиреневый', 'белый'],
+            'осенний': ['оранжевый', 'бордовый', 'желтый']
+        }
+        
         # Расширенный словарь синонимов для свадебной тематики
         self.synonyms = {
             'свадьба': [
@@ -258,26 +302,42 @@ class GiftRecommendationService:
         cache_key = f"recommendations_{query.lower().strip()}"
         cache.set(cache_key, recommendations, self.cache_timeout)
         
-    def _expand_keywords(self, keywords: list) -> list:
-        """Расширяет список ключевых слов синонимами"""
-        expanded_keywords = set(keywords)
+    def _calculate_flower_relevance(self, product_text: str, query_keywords: list) -> float:
+        """Рассчитывает релевантность по типу цветов"""
+        relevance = 0.0
+        matched_flowers = set()
         
-        # Добавляем все синонимы для каждого ключевого слова
-        for keyword in keywords:
-            for main_word, synonyms in self.synonyms.items():
-                if keyword in synonyms or keyword == main_word:
-                    expanded_keywords.update(synonyms)
-                    expanded_keywords.add(main_word)
-                    
-                    # Добавляем составные фразы
-                    if keyword in ['свадьба', 'свадебный']:
-                        expanded_keywords.update(['свадебный букет', 'свадебная композиция'])
-                    elif keyword in ['невеста', 'невесты']:
-                        expanded_keywords.update(['букет невесты', 'свадебный букет невесты'])
-                    elif keyword in ['жених', 'жениха']:
-                        expanded_keywords.update(['бутоньерка жениха', 'свадебная бутоньерка'])
+        # Проверяем каждый тип цветов
+        for flower_type, data in self.flower_types.items():
+            # Проверяем, есть ли этот тип цветов в запросе
+            is_requested = any(keyword in data['keywords'] for keyword in query_keywords)
+            
+            if is_requested:
+                # Проверяем наличие цветов в тексте продукта
+                for keyword in data['keywords']:
+                    if keyword in product_text:
+                        # Базовые очки за совпадение типа цветов
+                        relevance += data['weight']
+                        matched_flowers.add(flower_type)
+                        
+                        # Дополнительные очки за сорта
+                        for variety in data['varieties']:
+                            if variety in product_text:
+                                relevance += 0.3
+                                
+                        # Дополнительные очки за точное совпадение в названии
+                        if any(keyword in product_text.split()[0:3] for keyword in data['keywords']):
+                            relevance += 0.5
+                            
+                        break  # Прекращаем поиск после первого совпадения для этого типа
         
-        return list(expanded_keywords)
+        # Бонус за соответствие цветовой гамме
+        for style, colors in self.color_combinations.items():
+            if any(color in query_keywords for color in colors):
+                if any(color in product_text for color in colors):
+                    relevance += 0.4
+        
+        return relevance
         
     def _extract_keywords(self, query: str) -> list:
         """Извлекает ключевые слова из запроса с помощью GigaChat и базового анализа"""
@@ -388,7 +448,6 @@ class GiftRecommendationService:
             budget_value = ai_analysis['budget']
             if budget_value is not None:
                 try:
-                    # Преобразуем строку бюджета в число, убирая все нецифровые символы
                     budget_str = re.sub(r'[^\d]', '', str(budget_value))
                     if budget_str:
                         budget = int(budget_str)
@@ -396,16 +455,13 @@ class GiftRecommendationService:
                 except (ValueError, TypeError) as e:
                     logger.error(f"Error parsing budget from AI: {e}")
         
-        # Если бюджет не найден в AI анализе, пробуем извлечь из запроса
         if budget is None:
             budget = self._extract_budget_from_query(" ".join(keywords))
-            if budget:
-                # Обновляем AI анализ с найденным бюджетом
-                if ai_analysis:
-                    ai_analysis['budget'] = str(budget)
-                    logger.info(f"Updated AI analysis with extracted budget: {budget}")
+            if budget and ai_analysis:
+                ai_analysis['budget'] = str(budget)
+                logger.info(f"Updated AI analysis with extracted budget: {budget}")
         
-        # Фильтруем продукты по бюджету перед подсчетом релевантности
+        # Фильтруем продукты по бюджету
         filtered_products = []
         for product in products:
             try:
@@ -419,30 +475,19 @@ class GiftRecommendationService:
                 logger.error(f"Error comparing prices for product {product.name}: {e}")
                 continue
         
-        # Теперь работаем только с отфильтрованными продуктами
         for product in filtered_products:
             product_text = f"{product.name.lower()} {product.description.lower()}"
             matches = 0
             max_possible_matches = len(keywords)
             
-            # Проверяем соответствие бюджету
-            budget_match = True
-            if budget is not None:
-                try:
-                    product_price = float(product.price)
-                    # Если цена товара выше бюджета, пропускаем его
-                    if product_price > budget:
-                        logger.info(f"Skipping product {product.name} - price {product_price} exceeds budget {budget}")
-                        continue
-                except (ValueError, TypeError) as e:
-                    logger.error(f"Error comparing prices: {e}")
-                    continue  # В случае ошибки пропускаем товар
+            # Рассчитываем релевантность по цветам
+            flower_relevance = self._calculate_flower_relevance(product_text, keywords)
             
+            # Базовые совпадения по ключевым словам
             for keyword in keywords:
                 if keyword is None:
                     continue
                     
-                # Базовое совпадение
                 if keyword in product_text:
                     matches += 1
                     
@@ -452,24 +497,22 @@ class GiftRecommendationService:
                     
                     # Дополнительные очки за точное совпадение фразы
                     if len(keyword.split()) > 1 and keyword in product_text:
-                        matches += 0.5
+                        matches += 0.3
                     
-                    # Дополнительные очки за свадебную тематику
-                    if any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста', 'жених']):
-                        matches += 0.5
+                    # Дополнительные очки за свадебную тематику (меньший приоритет)
+                    if any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста']):
+                        matches += 0.3
                         
                     # Дополнительные очки за совпадение с AI анализом
                     if ai_analysis:
                         if 'type' in ai_analysis and ai_analysis['type'] and ai_analysis['type'] in product_text:
-                            matches += 0.5
+                            matches += 0.2
                         if 'theme' in ai_analysis and ai_analysis['theme'] and ai_analysis['theme'] in product_text:
-                            matches += 0.5
-                        if 'colors' in ai_analysis and ai_analysis['colors'] and any(color in product_text for color in ai_analysis['colors'] if color):
-                            matches += 0.3
+                            matches += 0.2
             
-            if matches > 0:
-                # Базовый score
-                score = matches / (max_possible_matches * 0.8)
+            if matches > 0 or flower_relevance > 0:
+                # Базовый score с учетом релевантности цветов
+                base_score = (matches + flower_relevance) / (max_possible_matches * 0.8)
                 
                 # Корректируем score с учетом бюджета
                 if budget is not None:
@@ -477,17 +520,19 @@ class GiftRecommendationService:
                         product_price = float(product.price)
                         # Если цена близка к бюджету (в пределах 20%), повышаем релевантность
                         if product_price >= budget * 0.8:
-                            score *= 1.2
+                            base_score *= 1.1
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error adjusting score by budget: {e}")
                 
                 matching_products.append({
                     'product': product,
-                    'match_score': score,
+                    'match_score': base_score,
                     'ai_analysis': ai_analysis,
-                    'budget_match': True if budget is not None else None
+                    'budget_match': True if budget is not None else None,
+                    'flower_relevance': flower_relevance  # Добавляем информацию о релевантности цветов
                 })
         
+        # Сортируем по убыванию релевантности
         matching_products.sort(key=lambda x: x['match_score'], reverse=True)
         return matching_products[:5]
         

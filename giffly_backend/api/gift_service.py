@@ -302,6 +302,33 @@ class GiftRecommendationService:
         cache_key = f"recommendations_{query.lower().strip()}"
         cache.set(cache_key, recommendations, self.cache_timeout)
         
+    def _expand_keywords(self, keywords: list) -> list:
+        """Расширяет список ключевых слов синонимами"""
+        expanded_keywords = set(keywords)
+        
+        # Добавляем все синонимы для каждого ключевого слова
+        for keyword in keywords:
+            for main_word, synonyms in self.synonyms.items():
+                if keyword in synonyms or keyword == main_word:
+                    expanded_keywords.update(synonyms)
+                    expanded_keywords.add(main_word)
+                    
+                    # Добавляем составные фразы
+                    if keyword in ['свадьба', 'свадебный']:
+                        expanded_keywords.update(['свадебный букет', 'свадебная композиция'])
+                    elif keyword in ['невеста', 'невесты']:
+                        expanded_keywords.update(['букет невесты', 'свадебный букет невесты'])
+                    elif keyword in ['жених', 'жениха']:
+                        expanded_keywords.update(['бутоньерка жениха', 'свадебная бутоньерка'])
+            
+            # Добавляем синонимы для цветов
+            for flower_type, data in self.flower_types.items():
+                if keyword in data['keywords']:
+                    expanded_keywords.update(data['keywords'])
+                    expanded_keywords.add(flower_type)
+        
+        return list(expanded_keywords)
+        
     def _calculate_flower_relevance(self, product_text: str, query_keywords: list) -> float:
         """Рассчитывает релевантность по типу цветов"""
         relevance = 0.0

@@ -5,12 +5,79 @@ from .models import Product
 from .serializers import ProductSerializer
 import re
 import logging
+from gigachat import GigaChat
+from typing import List, Dict, Any, Optional
+import json
 
 logger = logging.getLogger(__name__)
+
+class GigaChatService:
+    def __init__(self):
+        self.client = None
+        self._initialize_client()
+        
+    def _initialize_client(self):
+        """Инициализация клиента GigaChat"""
+        try:
+            credentials = os.getenv('GIGACHAT_CREDENTIALS')
+            if not credentials:
+                logger.error("GIGACHAT_CREDENTIALS not found in environment variables")
+                return
+                
+            self.client = GigaChat(credentials=credentials)
+            logger.info("GigaChat client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize GigaChat client: {str(e)}")
+            
+    def analyze_query(self, query: str) -> Dict[str, Any]:
+        """
+        Анализирует запрос пользователя с помощью GigaChat
+        
+        Args:
+            query (str): Запрос пользователя
+            
+        Returns:
+            Dict[str, Any]: Результат анализа запроса
+        """
+        if not self.client:
+            logger.error("GigaChat client not initialized")
+            return {}
+            
+        try:
+            prompt = f"""
+            Проанализируй запрос пользователя и выдели следующие аспекты:
+            1. Основная тема (свадьба, день рождения и т.д.)
+            2. Тип букета (свадебный, праздничный и т.д.)
+            3. Предпочтения по цветам
+            4. Бюджет (если указан)
+            5. Особые пожелания
+            
+            Запрос: {query}
+            
+            Ответ дай в формате JSON со следующими полями:
+            {{
+                "theme": "основная тема",
+                "type": "тип букета",
+                "colors": ["предпочтительные цвета"],
+                "budget": "бюджет или null",
+                "special_requests": ["особые пожелания"],
+                "keywords": ["ключевые слова для поиска"]
+            }}
+            """
+            
+            response = self.client.chat(prompt)
+            result = json.loads(response.choices[0].message.content)
+            logger.info(f"GigaChat analysis result: {result}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in GigaChat analysis: {str(e)}")
+            return {}
 
 class GiftRecommendationService:
     def __init__(self):
         self.cache_timeout = 3600  # 1 час кэширования
+        self.gigachat_service = GigaChatService()
         
         # Расширенный словарь синонимов для свадебной тематики
         self.synonyms = {
@@ -113,51 +180,85 @@ class GiftRecommendationService:
         return list(expanded_keywords)
         
     def _extract_keywords(self, query: str) -> list:
-        """Извлекает ключевые слова из запроса"""
-        # Удаляем знаки препинания и приводим к нижнему регистру
-        query = re.sub(r'[^\w\s]', '', query.lower())
+        """Извлекает ключевые слова из запроса с помощью GigaChat и базового анализа"""
+        # Получаем анализ от GigaChat
+        ai_analysis = self.gigachat_service.analyze_query(query)
         
-        # Разбиваем на слова
+        # Базовый анализ запроса
+        query = re.sub(r'[^\w\s]', '', query.lower())
         words = query.split()
         
-        # Собираем ключевые слова
-        keywords = []
+        # Объединяем результаты базового анализа и AI
+        keywords = set()
         
-        # Ищем важные фразы
+        # Добавляем ключевые слова из AI анализа
+        if ai_analysis:
+            if 'keywords' in ai_analysis:
+                keywords.update(ai_analysis['keywords'])
+            if 'type' in ai_analysis:
+                keywords.add(ai_analysis['type'])
+            if 'theme' in ai_analysis:
+                keywords.add(ai_analysis['theme'])
+            if 'colors' in ai_analysis:
+                keywords.update(ai_analysis['colors'])
+        
+        # Добавляем результаты базового анализа
         for i in range(len(words)):
-            # Проверяем двухсловные фразы
             if i + 1 < len(words):
                 phrase = f"{words[i]} {words[i+1]}"
                 for main_word, phrases in self.protected_phrases.items():
                     if phrase in phrases:
-                        keywords.append(phrase)
-                        keywords.append(main_word)
+                        keywords.add(phrase)
+                        keywords.add(main_word)
             
-            # Добавляем отдельные слова, если они не стоп-слова
             if words[i] not in self.stop_words and len(words[i]) > 2:
-                keywords.append(words[i])
+                keywords.add(words[i])
         
         # Расширяем ключевые слова синонимами
-        expanded_keywords = self._expand_keywords(keywords)
+        expanded_keywords = self._expand_keywords(list(keywords))
         
         logger.info(f"Original query: {query}")
-        logger.info(f"Extracted keywords: {keywords}")
+        logger.info(f"AI analysis: {ai_analysis}")
         logger.info(f"Expanded keywords: {expanded_keywords}")
         
         return expanded_keywords
         
     def _find_matching_products(self, keywords: list) -> list:
-        """Находит товары, соответствующие ключевым словам"""
+        """Находит товары, соответствующие ключевым словам с учетом AI анализа и бюджета"""
         products = Product.objects.all()
         matching_products = []
         
+        # Получаем AI анализ для контекста
+        ai_analysis = self.gigachat_service.analyze_query(" ".join(keywords))
+        
+        # Извлекаем бюджет из AI анализа
+        budget = None
+        if ai_analysis and 'budget' in ai_analysis and ai_analysis['budget']:
+            try:
+                # Преобразуем строку бюджета в число, убирая все нецифровые символы
+                budget_str = re.sub(r'[^\d]', '', str(ai_analysis['budget']))
+                if budget_str:
+                    budget = int(budget_str)
+                    logger.info(f"Extracted budget: {budget}")
+            except (ValueError, TypeError) as e:
+                logger.error(f"Error parsing budget: {e}")
+        
         for product in products:
-            # Проверяем совпадение в названии и описании
             product_text = f"{product.name.lower()} {product.description.lower()}"
-            
-            # Считаем совпадения с учетом синонимов
             matches = 0
             max_possible_matches = len(keywords)
+            
+            # Проверяем соответствие бюджету
+            budget_match = True
+            if budget is not None and hasattr(product, 'price'):
+                # Если цена товара выше бюджета более чем на 20%, снижаем релевантность
+                if product.price > budget * 1.2:
+                    budget_match = False
+                    logger.info(f"Product {product.name} price {product.price} exceeds budget {budget}")
+                # Если цена товара значительно ниже бюджета (менее 50%), тоже снижаем релевантность
+                elif product.price < budget * 0.5:
+                    budget_match = False
+                    logger.info(f"Product {product.name} price {product.price} too low for budget {budget}")
             
             for keyword in keywords:
                 # Базовое совпадение
@@ -175,37 +276,58 @@ class GiftRecommendationService:
                     # Дополнительные очки за свадебную тематику
                     if any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста', 'жених']):
                         matches += 0.5
+                        
+                    # Дополнительные очки за совпадение с AI анализом
+                    if ai_analysis:
+                        if 'type' in ai_analysis and ai_analysis['type'] in product_text:
+                            matches += 0.5
+                        if 'theme' in ai_analysis and ai_analysis['theme'] in product_text:
+                            matches += 0.5
+                        if 'colors' in ai_analysis and any(color in product_text for color in ai_analysis['colors']):
+                            matches += 0.3
             
             if matches > 0:
-                # Нормализуем score с учетом количества ключевых слов
-                # Используем более мягкую нормализацию
+                # Базовый score
                 score = matches / (max_possible_matches * 0.8)
+                
+                # Корректируем score с учетом бюджета
+                if budget is not None and hasattr(product, 'price'):
+                    if budget_match:
+                        # Если цена в пределах бюджета, повышаем релевантность
+                        if product.price <= budget:
+                            score *= 1.2
+                        # Если цена немного выше бюджета (до 20%), немного снижаем релевантность
+                        elif product.price <= budget * 1.2:
+                            score *= 0.9
+                    else:
+                        # Если цена сильно не соответствует бюджету, значительно снижаем релевантность
+                        score *= 0.5
+                
                 matching_products.append({
                     'product': product,
-                    'match_score': score
+                    'match_score': score,
+                    'ai_analysis': ai_analysis,
+                    'budget_match': budget_match if budget is not None else None
                 })
         
-        # Сортируем по score и берем топ-5
         matching_products.sort(key=lambda x: x['match_score'], reverse=True)
         return matching_products[:5]
         
     def get_recommendations(self, query: str) -> dict:
         """
-        Получает рекомендации подарков на основе запроса пользователя
+        Получает рекомендации подарков на основе запроса пользователя с использованием AI
         
         Args:
-            query (str): Запрос пользователя (например, "Что подарить на свадьбу?")
+            query (str): Запрос пользователя
             
         Returns:
             dict: Словарь с результатами запроса
         """
         try:
-            # Проверяем кэш
             cached_result = self._get_cached_recommendations(query)
             if cached_result:
                 return cached_result
 
-            # Извлекаем ключевые слова
             keywords = self._extract_keywords(query)
             if not keywords:
                 return {
@@ -213,37 +335,55 @@ class GiftRecommendationService:
                     'error': 'Не удалось определить ключевые слова в запросе'
                 }
 
-            # Ищем подходящие товары
             matching_products = self._find_matching_products(keywords)
             
             if not matching_products:
                 return {
                     'success': True,
                     'query': query,
-                    'message': 'К сожалению, не удалось найти подходящие букеты по вашему запросу. Попробуйте изменить формулировку или уточнить детали (например, "Свадебный букет для невесты" или "Букет из роз на свадьбу").',
+                    'message': 'К сожалению, не удалось найти подходящие букеты по вашему запросу. Попробуйте изменить формулировку или уточнить детали.',
                     'products': []
                 }
 
-            # Формируем ответ
             products_data = []
             for match in matching_products:
                 product = match['product']
                 serializer = ProductSerializer(product)
-                products_data.append({
+                product_data = {
                     'product': serializer.data,
-                    'relevance': round(match['match_score'] * 100)  # Процент релевантности
-                })
+                    'relevance': round(match['match_score'] * 100)
+                }
+                
+                # Добавляем AI анализ, если он есть
+                if 'ai_analysis' in match:
+                    product_data['ai_analysis'] = match['ai_analysis']
+                
+                # Добавляем информацию о соответствии бюджету
+                if 'budget_match' in match and match['budget_match'] is not None:
+                    product_data['budget_match'] = match['budget_match']
+                    if hasattr(product, 'price') and 'ai_analysis' in match and 'budget' in match['ai_analysis']:
+                        product_data['budget_info'] = {
+                            'product_price': product.price,
+                            'requested_budget': match['ai_analysis']['budget']
+                        }
+                
+                products_data.append(product_data)
+
+            # Формируем сообщение с учетом бюджета
+            message = 'Вот подходящие букеты по вашему запросу:'
+            if any('budget' in p.get('ai_analysis', {}) for p in products_data):
+                budget_products = [p for p in products_data if p.get('budget_match', True)]
+                if len(budget_products) < len(products_data):
+                    message += ' (Некоторые букеты могут не соответствовать указанному бюджету)'
 
             result = {
                 'success': True,
                 'query': query,
-                'message': 'Вот подходящие букеты по вашему запросу:',
+                'message': message,
                 'products': products_data
             }
 
-            # Кэшируем результат
             self._cache_recommendations(query, result)
-            
             return result
 
         except Exception as e:

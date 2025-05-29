@@ -24,7 +24,7 @@ class GigaChatService:
                 logger.error("GIGACHAT_CREDENTIALS not found in environment variables")
                 return
                 
-            self.client = GigaChat(credentials=credentials)
+            self.client = GigaChat(credentials=credentials, verify_ssl_certs=False)
             logger.info("GigaChat client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize GigaChat client: {str(e)}")

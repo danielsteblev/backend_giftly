@@ -8,30 +8,84 @@ import logging
 from gigachat import GigaChat
 from typing import List, Dict, Any, Optional
 import json
+import time
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 class GigaChatService:
     def __init__(self):
         self.client = None
+        self.token_cache_key = 'gigachat_token'
+        self.token_expiry_cache_key = 'gigachat_token_expiry'
+        self.token_refresh_interval = 3600  # 1 час в секундах
+        self.max_retries = 3
+        self.retry_delay = 2
         self._initialize_client()
         
+    def _get_cached_token(self) -> Optional[str]:
+        """Получает токен из кэша"""
+        token = cache.get(self.token_cache_key)
+        expiry = cache.get(self.token_expiry_cache_key)
+        
+        if token and expiry and datetime.fromisoformat(expiry) > datetime.now():
+            return token
+        return None
+        
+    def _cache_token(self, token: str):
+        """Сохраняет токен в кэш с временем истечения"""
+        expiry = datetime.now() + timedelta(seconds=self.token_refresh_interval)
+        cache.set(self.token_cache_key, token, self.token_refresh_interval)
+        cache.set(self.token_expiry_cache_key, expiry.isoformat(), self.token_refresh_interval)
+        
     def _initialize_client(self):
-        """Инициализация клиента GigaChat"""
+        """Инициализация клиента GigaChat с автоматическим обновлением токена"""
         try:
             credentials = os.getenv('GIGACHAT_CREDENTIALS')
             if not credentials:
                 logger.error("GIGACHAT_CREDENTIALS not found in environment variables")
                 return
                 
-            self.client = GigaChat(credentials=credentials, verify_ssl_certs=False)
+            # Пробуем получить токен из кэша
+            token = self._get_cached_token()
+            
+            if token:
+                logger.info("Using cached GigaChat token")
+                self.client = GigaChat(credentials=token, verify_ssl_certs=False)
+            else:
+                logger.info("Initializing new GigaChat client with credentials")
+                self.client = GigaChat(credentials=credentials, verify_ssl_certs=False)
+                # Кэшируем новый токен
+                if hasattr(self.client, '_access_token'):
+                    self._cache_token(self.client._access_token)
+                    
             logger.info("GigaChat client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize GigaChat client: {str(e)}")
             
+    def _refresh_token(self):
+        """Обновляет токен GigaChat"""
+        try:
+            credentials = os.getenv('GIGACHAT_CREDENTIALS')
+            if not credentials:
+                logger.error("GIGACHAT_CREDENTIALS not found in environment variables")
+                return False
+                
+            logger.info("Refreshing GigaChat token")
+            self.client = GigaChat(credentials=credentials, verify_ssl_certs=False)
+            
+            if hasattr(self.client, '_access_token'):
+                self._cache_token(self.client._access_token)
+                logger.info("GigaChat token refreshed successfully")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to refresh GigaChat token: {str(e)}")
+            return False
+            
     def analyze_query(self, query: str) -> Dict[str, Any]:
         """
-        Анализирует запрос пользователя с помощью GigaChat
+        Анализирует запрос пользователя с помощью GigaChat с автоматическим обновлением токена
         
         Args:
             query (str): Запрос пользователя
@@ -43,58 +97,82 @@ class GigaChatService:
             logger.error("GigaChat client not initialized")
             return {}
             
-        try:
-            prompt = f"""
-            Проанализируй запрос пользователя и выдели следующие аспекты:
-            1. Основная тема (свадьба, день рождения и т.д.)
-            2. Тип букета (свадебный, праздничный и т.д.)
-            3. Предпочтения по цветам
-            4. Бюджет (если указан)
-            5. Особые пожелания
-            
-            Запрос: {query}
-            
-            Ответ дай в формате JSON со следующими полями:
-            {{
-                "theme": "основная тема",
-                "type": "тип букета",
-                "colors": ["предпочтительные цвета"],
-                "budget": "бюджет или null",
-                "special_requests": ["особые пожелания"],
-                "keywords": ["ключевые слова для поиска"]
-            }}
-            """
-            
-            response = self.client.chat(prompt)
-            logger.info(f"Raw GigaChat response: {response}")
-            
-            if not response or not response.choices:
-                logger.error("Empty response from GigaChat")
-                return {}
-                
-            content = response.choices[0].message.content
-            logger.info(f"GigaChat content: {content}")
-            
-            # Очищаем ответ от возможных лишних символов
-            content = content.strip()
-            if content.startswith('```json'):
-                content = content[7:]
-            if content.endswith('```'):
-                content = content[:-3]
-            content = content.strip()
-            
+        for attempt in range(self.max_retries):
             try:
-                result = json.loads(content)
-                logger.info(f"Parsed GigaChat result: {result}")
-                return result
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse GigaChat response as JSON: {e}")
-                logger.error(f"Content that failed to parse: {content}")
+                prompt = f"""
+                Проанализируй запрос пользователя и выдели следующие аспекты:
+                1. Основная тема (свадьба, день рождения и т.д.)
+                2. Тип букета (свадебный, праздничный и т.д.)
+                3. Предпочтения по цветам
+                4. Бюджет (если указан)
+                5. Особые пожелания
+                
+                Запрос: {query}
+                
+                Ответ дай в формате JSON со следующими полями:
+                {{
+                    "theme": "основная тема",
+                    "type": "тип букета",
+                    "colors": ["предпочтительные цвета"],
+                    "budget": "бюджет или null",
+                    "special_requests": ["особые пожелания"],
+                    "keywords": ["ключевые слова для поиска"]
+                }}
+                """
+                
+                response = self.client.chat(prompt)
+                logger.info(f"Raw GigaChat response: {response}")
+                
+                if not response or not response.choices:
+                    logger.error("Empty response from GigaChat")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(self.retry_delay)
+                        continue
+                    return {}
+                    
+                content = response.choices[0].message.content
+                logger.info(f"GigaChat content: {content}")
+                
+                # Очищаем ответ от возможных лишних символов
+                content = content.strip()
+                if content.startswith('```json'):
+                    content = content[7:]
+                if content.endswith('```'):
+                    content = content[:-3]
+                content = content.strip()
+                
+                try:
+                    result = json.loads(content)
+                    logger.info(f"Parsed GigaChat result: {result}")
+                    return result
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse GigaChat response as JSON: {e}")
+                    logger.error(f"Content that failed to parse: {content}")
+                    if attempt < self.max_retries - 1:
+                        time.sleep(self.retry_delay)
+                        continue
+                    return {}
+                
+            except Exception as e:
+                error_str = str(e)
+                logger.error(f"Error in GigaChat analysis (attempt {attempt + 1}/{self.max_retries}): {error_str}")
+                
+                # Если токен истек или недействителен, пробуем обновить
+                if "401" in error_str or "credentials" in error_str.lower():
+                    if self._refresh_token():
+                        continue
+                
+                # Если превышен лимит запросов, ждем подольше
+                if "429" in error_str:
+                    time.sleep(self.retry_delay * (attempt + 1))
+                    continue
+                    
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
                 return {}
-            
-        except Exception as e:
-            logger.error(f"Error in GigaChat analysis: {str(e)}")
-            return {}
+        
+        return {}
 
 class GiftRecommendationService:
     def __init__(self):

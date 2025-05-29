@@ -205,24 +205,30 @@ class GiftRecommendationService:
         """Извлекает ключевые слова из запроса с помощью GigaChat и базового анализа"""
         # Получаем анализ от GigaChat
         ai_analysis = self.gigachat_service.analyze_query(query)
+        logger.info(f"AI analysis in _extract_keywords: {ai_analysis}")
         
         # Базовый анализ запроса
         query = re.sub(r'[^\w\s]', '', query.lower())
         words = query.split()
+        logger.info(f"Base words from query: {words}")
         
         # Объединяем результаты базового анализа и AI
         keywords = set()
         
         # Добавляем ключевые слова из AI анализа
         if ai_analysis:
-            if 'keywords' in ai_analysis:
-                keywords.update(ai_analysis['keywords'])
-            if 'type' in ai_analysis:
+            if 'keywords' in ai_analysis and ai_analysis['keywords']:
+                logger.info(f"Adding keywords from AI: {ai_analysis['keywords']}")
+                keywords.update(k for k in ai_analysis['keywords'] if k is not None)
+            if 'type' in ai_analysis and ai_analysis['type']:
+                logger.info(f"Adding type from AI: {ai_analysis['type']}")
                 keywords.add(ai_analysis['type'])
-            if 'theme' in ai_analysis:
+            if 'theme' in ai_analysis and ai_analysis['theme']:
+                logger.info(f"Adding theme from AI: {ai_analysis['theme']}")
                 keywords.add(ai_analysis['theme'])
-            if 'colors' in ai_analysis:
-                keywords.update(ai_analysis['colors'])
+            if 'colors' in ai_analysis and ai_analysis['colors']:
+                logger.info(f"Adding colors from AI: {ai_analysis['colors']}")
+                keywords.update(c for c in ai_analysis['colors'] if c is not None)
         
         # Добавляем результаты базового анализа
         for i in range(len(words)):
@@ -230,20 +236,24 @@ class GiftRecommendationService:
                 phrase = f"{words[i]} {words[i+1]}"
                 for main_word, phrases in self.protected_phrases.items():
                     if phrase in phrases:
+                        logger.info(f"Adding protected phrase: {phrase} -> {main_word}")
                         keywords.add(phrase)
                         keywords.add(main_word)
             
             if words[i] not in self.stop_words and len(words[i]) > 2:
+                logger.info(f"Adding base word: {words[i]}")
                 keywords.add(words[i])
         
         # Расширяем ключевые слова синонимами
+        logger.info(f"Keywords before expansion: {list(keywords)}")
         expanded_keywords = self._expand_keywords(list(keywords))
+        logger.info(f"Keywords after expansion: {expanded_keywords}")
         
-        logger.info(f"Original query: {query}")
-        logger.info(f"AI analysis: {ai_analysis}")
-        logger.info(f"Expanded keywords: {expanded_keywords}")
+        # Фильтруем None значения и пустые строки
+        final_keywords = [k for k in expanded_keywords if k is not None and k.strip()]
+        logger.info(f"Final keywords: {final_keywords}")
         
-        return expanded_keywords
+        return final_keywords
         
     def _find_matching_products(self, keywords: list) -> list:
         """Находит товары, соответствующие ключевым словам с учетом AI анализа и бюджета"""

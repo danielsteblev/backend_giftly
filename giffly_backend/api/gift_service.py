@@ -11,29 +11,75 @@ logger = logging.getLogger(__name__)
 class GiftRecommendationService:
     def __init__(self):
         self.cache_timeout = 3600  # 1 час кэширования
-        self.min_relevance_threshold = 0.3  # Минимальный порог релевантности (30%)
-        self.max_recommendations = 10  # Максимальное количество рекомендаций
         
-        # Словарь синонимов для улучшения поиска
+        # Расширенный словарь синонимов для свадебной тематики
         self.synonyms = {
-            'свадьба': ['свадебный', 'невеста', 'жених', 'свадебная', 'свадебное', 'свадебные'],
-            'подарок': ['подарить', 'дарить', 'преподнести', 'презент', 'подарки'],
-            'букет': ['букеты', 'цветы', 'цветочный', 'цветочная', 'цветочные'],
-            'розы': ['роза', 'розовый', 'розовая', 'розовые'],
-            'лилии': ['лилия', 'лилейный', 'лилейная'],
-            'пионы': ['пион', 'пионовидный', 'пионовидная'],
-            'гортензия': ['гортензии', 'гортензией'],
-            'торжество': ['праздник', 'праздничный', 'праздничная', 'праздничные'],
-            'юбилей': ['юбилейный', 'юбилейная', 'юбилейные'],
-            'день рождения': ['день рождения', 'днюха', 'именины'],
+            'свадьба': [
+                'свадебный', 'невеста', 'жених', 'свадебная', 'свадебное', 'свадебные',
+                'свадьбы', 'свадебный букет', 'свадебная композиция', 'свадебная флористика',
+                'свадебный декор', 'свадебное оформление', 'свадебная церемония'
+            ],
+            'подарок': [
+                'подарить', 'дарить', 'преподнести', 'презент', 'подарки',
+                'что подарить', 'какой подарок', 'выбрать подарок', 'идея подарка'
+            ],
+            'букет': [
+                'букеты', 'цветы', 'цветочный', 'цветочная', 'цветочные',
+                'композиция', 'флористика', 'флористический', 'флористическая',
+                'свадебный букет', 'свадебная композиция', 'свадебная флористика'
+            ],
+            'розы': [
+                'роза', 'розовый', 'розовая', 'розовые', 'розы',
+                'красные розы', 'белые розы', 'розовые розы', 'пионовидные розы'
+            ],
+            'пионы': [
+                'пион', 'пионовидный', 'пионовидная', 'пионовидные',
+                'пионовидные розы', 'пионы', 'пионовый', 'пионовая'
+            ],
+            'гортензия': [
+                'гортензии', 'гортензией', 'гортензиевый', 'гортензиевая',
+                'синяя гортензия', 'розовая гортензия', 'белая гортензия'
+            ],
+            'торжество': [
+                'праздник', 'праздничный', 'праздничная', 'праздничные',
+                'торжественный', 'торжественная', 'торжественные',
+                'свадебное торжество', 'свадебный праздник'
+            ],
+            'невеста': [
+                'невесты', 'невест', 'невесте', 'невестой',
+                'свадебный букет невесты', 'букет для невесты',
+                'свадебная композиция невесты'
+            ],
+            'жених': [
+                'жениха', 'жениху', 'женихом',
+                'бутоньерка', 'бутоньерки', 'бутоньерку',
+                'свадебная бутоньерка', 'бутоньерка жениха'
+            ],
+            'свадебный букет': [
+                'свадебная композиция', 'свадебная флористика',
+                'букет невесты', 'букет для невесты',
+                'свадебный букет невесты', 'свадебная композиция невесты'
+            ]
         }
         
-        # Стоп-слова, которые не должны удаляться, если они являются частью важных фраз
-        self.protected_words = {
-            'подарить': ['подарить', 'подарок', 'подарки'],
-            'на': ['на свадьбу', 'на день рождения', 'на юбилей'],
-            'для': ['для свадьбы', 'для невесты', 'для жениха'],
+        # Важные фразы и их контексты
+        self.protected_phrases = {
+            'свадьба': [
+                'на свадьбу', 'для свадьбы', 'на свадебное торжество',
+                'для свадебной церемонии', 'на свадебное мероприятие'
+            ],
+            'подарок': [
+                'что подарить', 'какой подарок', 'выбрать подарок',
+                'идея подарка', 'подарить на', 'подарок для'
+            ],
+            'букет': [
+                'свадебный букет', 'букет на свадьбу', 'букет для свадьбы',
+                'букет невесты', 'букет для невесты'
+            ]
         }
+        
+        # Минимальные стоп-слова, которые не влияют на поиск
+        self.stop_words = {'что', 'какой', 'какая', 'какие', 'как', 'в', 'и', 'или', 'а', 'но'}
         
     def _get_cached_recommendations(self, query: str) -> dict:
         """Получает рекомендации из кэша"""
@@ -48,12 +94,22 @@ class GiftRecommendationService:
     def _expand_keywords(self, keywords: list) -> list:
         """Расширяет список ключевых слов синонимами"""
         expanded_keywords = set(keywords)
+        
+        # Добавляем все синонимы для каждого ключевого слова
         for keyword in keywords:
-            # Ищем синонимы для каждого ключевого слова
             for main_word, synonyms in self.synonyms.items():
                 if keyword in synonyms or keyword == main_word:
                     expanded_keywords.update(synonyms)
                     expanded_keywords.add(main_word)
+                    
+                    # Добавляем составные фразы
+                    if keyword in ['свадьба', 'свадебный']:
+                        expanded_keywords.update(['свадебный букет', 'свадебная композиция'])
+                    elif keyword in ['невеста', 'невесты']:
+                        expanded_keywords.update(['букет невесты', 'свадебный букет невесты'])
+                    elif keyword in ['жених', 'жениха']:
+                        expanded_keywords.update(['бутоньерка жениха', 'свадебная бутоньерка'])
+        
         return list(expanded_keywords)
         
     def _extract_keywords(self, query: str) -> list:
@@ -64,36 +120,27 @@ class GiftRecommendationService:
         # Разбиваем на слова
         words = query.split()
         
-        # Сначала ищем защищенные фразы
-        protected_phrases = []
-        for i in range(len(words)):
-            for protected_word, phrases in self.protected_words.items():
-                if words[i] == protected_word and i + 1 < len(words):
-                    phrase = f"{words[i]} {words[i+1]}"
-                    if phrase in phrases:
-                        protected_phrases.append(phrase)
-        
-        # Базовые стоп-слова
-        stop_words = {'что', 'какой', 'какая', 'какие', 'как', 'в', 'и', 'или', 'а', 'но', 'по', 'с', 'от', 'к', 'у', 'о', 'об', 'за', 'под', 'над', 'перед', 'после', 'между', 'через', 'без', 'до', 'при', 'про', 'со', 'во', 'не', 'ни', 'же', 'бы', 'ли', 'быть', 'есть', 'был', 'была', 'были', 'было'}
-        
         # Собираем ключевые слова
         keywords = []
         
-        # Добавляем защищенные фразы
-        keywords.extend(protected_phrases)
-        
-        # Добавляем остальные слова, исключая стоп-слова
-        for word in words:
-            if word not in stop_words and len(word) > 2:
-                # Проверяем составные слова (например, "день рождения")
-                if word == 'день' and 'рождения' in words:
-                    keywords.append('день рождения')
-                else:
-                    keywords.append(word)
+        # Ищем важные фразы
+        for i in range(len(words)):
+            # Проверяем двухсловные фразы
+            if i + 1 < len(words):
+                phrase = f"{words[i]} {words[i+1]}"
+                for main_word, phrases in self.protected_phrases.items():
+                    if phrase in phrases:
+                        keywords.append(phrase)
+                        keywords.append(main_word)
+            
+            # Добавляем отдельные слова, если они не стоп-слова
+            if words[i] not in self.stop_words and len(words[i]) > 2:
+                keywords.append(words[i])
         
         # Расширяем ключевые слова синонимами
         expanded_keywords = self._expand_keywords(keywords)
         
+        logger.info(f"Original query: {query}")
         logger.info(f"Extracted keywords: {keywords}")
         logger.info(f"Expanded keywords: {expanded_keywords}")
         
@@ -110,39 +157,44 @@ class GiftRecommendationService:
             
             # Считаем совпадения с учетом синонимов
             matches = 0
+            max_possible_matches = len(keywords)
+            
             for keyword in keywords:
+                # Базовое совпадение
                 if keyword in product_text:
                     matches += 1
+                    
                     # Дополнительные очки за совпадение в названии
                     if keyword in product.name.lower():
                         matches += 0.5
+                    
                     # Дополнительные очки за точное совпадение фразы
                     if len(keyword.split()) > 1 and keyword in product_text:
+                        matches += 0.5
+                    
+                    # Дополнительные очки за свадебную тематику
+                    if any(sw in keyword for sw in ['свадьба', 'свадебный', 'невеста', 'жених']):
                         matches += 0.5
             
             if matches > 0:
                 # Нормализуем score с учетом количества ключевых слов
-                score = matches / (len(keywords) * 1.2)  # Уменьшаем вес количества ключевых слов
-                
-                # Добавляем только если релевантность выше порога
-                if score >= self.min_relevance_threshold:
-                    matching_products.append({
-                        'product': product,
-                        'match_score': score
-                    })
+                # Используем более мягкую нормализацию
+                score = matches / (max_possible_matches * 0.8)
+                matching_products.append({
+                    'product': product,
+                    'match_score': score
+                })
         
-        # Сортируем по score
+        # Сортируем по score и берем топ-5
         matching_products.sort(key=lambda x: x['match_score'], reverse=True)
-        
-        # Возвращаем все рекомендации, но не более максимального количества
-        return matching_products[:self.max_recommendations]
+        return matching_products[:5]
         
     def get_recommendations(self, query: str) -> dict:
         """
         Получает рекомендации подарков на основе запроса пользователя
         
         Args:
-            query (str): Запрос пользователя (например, "Зарекомендуй букет на свадьбу")
+            query (str): Запрос пользователя (например, "Что подарить на свадьбу?")
             
         Returns:
             dict: Словарь с результатами запроса
@@ -168,7 +220,7 @@ class GiftRecommendationService:
                 return {
                     'success': True,
                     'query': query,
-                    'message': 'К сожалению, не удалось найти подходящие букеты по вашему запросу. Попробуйте изменить формулировку.',
+                    'message': 'К сожалению, не удалось найти подходящие букеты по вашему запросу. Попробуйте изменить формулировку или уточнить детали (например, "Свадебный букет для невесты" или "Букет из роз на свадьбу").',
                     'products': []
                 }
 
@@ -177,23 +229,10 @@ class GiftRecommendationService:
             for match in matching_products:
                 product = match['product']
                 serializer = ProductSerializer(product)
-                relevance = round(match['match_score'] * 100)  # Процент релевантности
-                
-                # Добавляем только если релевантность выше порога
-                if relevance >= self.min_relevance_threshold * 100:
-                    products_data.append({
-                        'product': serializer.data,
-                        'relevance': relevance
-                    })
-
-            # Если после фильтрации не осталось продуктов
-            if not products_data:
-                return {
-                    'success': True,
-                    'query': query,
-                    'message': 'К сожалению, не удалось найти достаточно релевантные букеты по вашему запросу. Попробуйте изменить формулировку.',
-                    'products': []
-                }
+                products_data.append({
+                    'product': serializer.data,
+                    'relevance': round(match['match_score'] * 100)  # Процент релевантности
+                })
 
             result = {
                 'success': True,

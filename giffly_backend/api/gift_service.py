@@ -333,6 +333,30 @@ class GiftRecommendationService:
         
         return final_keywords
         
+    def _extract_budget_from_query(self, query: str) -> Optional[int]:
+        """Извлекает бюджет из текста запроса"""
+        try:
+            # Ищем числа после слов "до", "ценой", "стоимостью", "бюджет"
+            budget_patterns = [
+                r'до\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'ценой\s+до\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'стоимостью\s+до\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'бюджет\s+(\d+)\s*(?:руб|₽|рублей|рубля)?',
+                r'(\d+)\s*(?:руб|₽|рублей|рубля)\s+максимум',
+                r'не\s+дороже\s+(\d+)\s*(?:руб|₽|рублей|рубля)?'
+            ]
+            
+            for pattern in budget_patterns:
+                match = re.search(pattern, query.lower())
+                if match:
+                    budget = int(match.group(1))
+                    logger.info(f"Extracted budget from query: {budget}")
+                    return budget
+            return None
+        except Exception as e:
+            logger.error(f"Error extracting budget from query: {e}")
+            return None
+
     def _find_matching_products(self, keywords: list) -> list:
         """Находит товары, соответствующие ключевым словам с учетом AI анализа и бюджета"""
         products = Product.objects.all()
@@ -341,7 +365,7 @@ class GiftRecommendationService:
         # Получаем AI анализ для контекста
         ai_analysis = self.gigachat_service.analyze_query(" ".join(keywords))
         
-        # Извлекаем бюджет из AI анализа
+        # Извлекаем бюджет из AI анализа и напрямую из запроса
         budget = None
         if ai_analysis and 'budget' in ai_analysis:
             budget_value = ai_analysis['budget']
@@ -351,9 +375,17 @@ class GiftRecommendationService:
                     budget_str = re.sub(r'[^\d]', '', str(budget_value))
                     if budget_str:
                         budget = int(budget_str)
-                        logger.info(f"Extracted budget: {budget}")
+                        logger.info(f"Extracted budget from AI analysis: {budget}")
                 except (ValueError, TypeError) as e:
-                    logger.error(f"Error parsing budget: {e}")
+                    logger.error(f"Error parsing budget from AI: {e}")
+        
+        # Если бюджет не найден в AI анализе, пробуем извлечь из запроса
+        if budget is None:
+            budget = self._extract_budget_from_query(" ".join(keywords))
+            if budget:
+                # Обновляем AI анализ с найденным бюджетом
+                if ai_analysis:
+                    ai_analysis['budget'] = str(budget)
         
         for product in products:
             product_text = f"{product.name.lower()} {product.description.lower()}"

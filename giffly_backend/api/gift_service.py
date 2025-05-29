@@ -66,9 +66,31 @@ class GigaChatService:
             """
             
             response = self.client.chat(prompt)
-            result = json.loads(response.choices[0].message.content)
-            logger.info(f"GigaChat analysis result: {result}")
-            return result
+            logger.info(f"Raw GigaChat response: {response}")
+            
+            if not response or not response.choices:
+                logger.error("Empty response from GigaChat")
+                return {}
+                
+            content = response.choices[0].message.content
+            logger.info(f"GigaChat content: {content}")
+            
+            # Очищаем ответ от возможных лишних символов
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]
+            if content.endswith('```'):
+                content = content[:-3]
+            content = content.strip()
+            
+            try:
+                result = json.loads(content)
+                logger.info(f"Parsed GigaChat result: {result}")
+                return result
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse GigaChat response as JSON: {e}")
+                logger.error(f"Content that failed to parse: {content}")
+                return {}
             
         except Exception as e:
             logger.error(f"Error in GigaChat analysis: {str(e)}")

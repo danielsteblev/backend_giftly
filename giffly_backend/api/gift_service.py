@@ -287,17 +287,13 @@ class GiftRecommendationService:
             if budget is not None:
                 try:
                     product_price = float(product.price)
-                    # Если цена товара выше бюджета более чем на 20%, снижаем релевантность
-                    if product_price > budget * 1.2:
-                        budget_match = False
-                        logger.info(f"Product {product.name} price {product_price} exceeds budget {budget}")
-                    # Если цена товара значительно ниже бюджета (менее 50%), тоже снижаем релевантность
-                    elif product_price < budget * 0.5:
-                        budget_match = False
-                        logger.info(f"Product {product.name} price {product_price} too low for budget {budget}")
+                    # Если цена товара выше бюджета, пропускаем его
+                    if product_price > budget:
+                        logger.info(f"Skipping product {product.name} - price {product_price} exceeds budget {budget}")
+                        continue
                 except (ValueError, TypeError) as e:
                     logger.error(f"Error comparing prices: {e}")
-                    budget_match = True  # В случае ошибки не применяем бюджетное ограничение
+                    continue  # В случае ошибки пропускаем товар
             
             for keyword in keywords:
                 if keyword is None:
@@ -336,16 +332,9 @@ class GiftRecommendationService:
                 if budget is not None:
                     try:
                         product_price = float(product.price)
-                        if budget_match:
-                            # Если цена в пределах бюджета, повышаем релевантность
-                            if product_price <= budget:
-                                score *= 1.2
-                            # Если цена немного выше бюджета (до 20%), немного снижаем релевантность
-                            elif product_price <= budget * 1.2:
-                                score *= 0.9
-                        else:
-                            # Если цена сильно не соответствует бюджету, значительно снижаем релевантность
-                            score *= 0.5
+                        # Если цена близка к бюджету (в пределах 20%), повышаем релевантность
+                        if product_price >= budget * 0.8:
+                            score *= 1.2
                     except (ValueError, TypeError) as e:
                         logger.error(f"Error adjusting score by budget: {e}")
                 
@@ -353,7 +342,7 @@ class GiftRecommendationService:
                     'product': product,
                     'match_score': score,
                     'ai_analysis': ai_analysis,
-                    'budget_match': budget_match if budget is not None else None
+                    'budget_match': True if budget is not None else None
                 })
         
         matching_products.sort(key=lambda x: x['match_score'], reverse=True)

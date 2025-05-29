@@ -255,15 +255,17 @@ class GiftRecommendationService:
         
         # Извлекаем бюджет из AI анализа
         budget = None
-        if ai_analysis and 'budget' in ai_analysis and ai_analysis['budget']:
-            try:
-                # Преобразуем строку бюджета в число, убирая все нецифровые символы
-                budget_str = re.sub(r'[^\d]', '', str(ai_analysis['budget']))
-                if budget_str:
-                    budget = int(budget_str)
-                    logger.info(f"Extracted budget: {budget}")
-            except (ValueError, TypeError) as e:
-                logger.error(f"Error parsing budget: {e}")
+        if ai_analysis and 'budget' in ai_analysis:
+            budget_value = ai_analysis['budget']
+            if budget_value is not None:
+                try:
+                    # Преобразуем строку бюджета в число, убирая все нецифровые символы
+                    budget_str = re.sub(r'[^\d]', '', str(budget_value))
+                    if budget_str:
+                        budget = int(budget_str)
+                        logger.info(f"Extracted budget: {budget}")
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error parsing budget: {e}")
         
         for product in products:
             product_text = f"{product.name.lower()} {product.description.lower()}"
@@ -272,17 +274,25 @@ class GiftRecommendationService:
             
             # Проверяем соответствие бюджету
             budget_match = True
-            if budget is not None and hasattr(product, 'price'):
-                # Если цена товара выше бюджета более чем на 20%, снижаем релевантность
-                if product.price > budget * 1.2:
-                    budget_match = False
-                    logger.info(f"Product {product.name} price {product.price} exceeds budget {budget}")
-                # Если цена товара значительно ниже бюджета (менее 50%), тоже снижаем релевантность
-                elif product.price < budget * 0.5:
-                    budget_match = False
-                    logger.info(f"Product {product.name} price {product.price} too low for budget {budget}")
+            if budget is not None:
+                try:
+                    product_price = float(product.price)
+                    # Если цена товара выше бюджета более чем на 20%, снижаем релевантность
+                    if product_price > budget * 1.2:
+                        budget_match = False
+                        logger.info(f"Product {product.name} price {product_price} exceeds budget {budget}")
+                    # Если цена товара значительно ниже бюджета (менее 50%), тоже снижаем релевантность
+                    elif product_price < budget * 0.5:
+                        budget_match = False
+                        logger.info(f"Product {product.name} price {product_price} too low for budget {budget}")
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Error comparing prices: {e}")
+                    budget_match = True  # В случае ошибки не применяем бюджетное ограничение
             
             for keyword in keywords:
+                if keyword is None:
+                    continue
+                    
                 # Базовое совпадение
                 if keyword in product_text:
                     matches += 1
@@ -301,11 +311,11 @@ class GiftRecommendationService:
                         
                     # Дополнительные очки за совпадение с AI анализом
                     if ai_analysis:
-                        if 'type' in ai_analysis and ai_analysis['type'] in product_text:
+                        if 'type' in ai_analysis and ai_analysis['type'] and ai_analysis['type'] in product_text:
                             matches += 0.5
-                        if 'theme' in ai_analysis and ai_analysis['theme'] in product_text:
+                        if 'theme' in ai_analysis and ai_analysis['theme'] and ai_analysis['theme'] in product_text:
                             matches += 0.5
-                        if 'colors' in ai_analysis and any(color in product_text for color in ai_analysis['colors']):
+                        if 'colors' in ai_analysis and ai_analysis['colors'] and any(color in product_text for color in ai_analysis['colors'] if color):
                             matches += 0.3
             
             if matches > 0:
@@ -313,17 +323,21 @@ class GiftRecommendationService:
                 score = matches / (max_possible_matches * 0.8)
                 
                 # Корректируем score с учетом бюджета
-                if budget is not None and hasattr(product, 'price'):
-                    if budget_match:
-                        # Если цена в пределах бюджета, повышаем релевантность
-                        if product.price <= budget:
-                            score *= 1.2
-                        # Если цена немного выше бюджета (до 20%), немного снижаем релевантность
-                        elif product.price <= budget * 1.2:
-                            score *= 0.9
-                    else:
-                        # Если цена сильно не соответствует бюджету, значительно снижаем релевантность
-                        score *= 0.5
+                if budget is not None:
+                    try:
+                        product_price = float(product.price)
+                        if budget_match:
+                            # Если цена в пределах бюджета, повышаем релевантность
+                            if product_price <= budget:
+                                score *= 1.2
+                            # Если цена немного выше бюджета (до 20%), немного снижаем релевантность
+                            elif product_price <= budget * 1.2:
+                                score *= 0.9
+                        else:
+                            # Если цена сильно не соответствует бюджету, значительно снижаем релевантность
+                            score *= 0.5
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"Error adjusting score by budget: {e}")
                 
                 matching_products.append({
                     'product': product,

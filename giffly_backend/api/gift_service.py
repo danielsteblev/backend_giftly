@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 class GiftRecommendationService:
     def __init__(self):
         self.cache_timeout = 3600  # 1 час кэширования
+        self.min_relevance_threshold = 0.3  # Минимальный порог релевантности (30%)
+        self.max_recommendations = 10  # Максимальное количество рекомендаций
         
         # Словарь синонимов для улучшения поиска
         self.synonyms = {
@@ -121,14 +123,19 @@ class GiftRecommendationService:
             if matches > 0:
                 # Нормализуем score с учетом количества ключевых слов
                 score = matches / (len(keywords) * 1.2)  # Уменьшаем вес количества ключевых слов
-                matching_products.append({
-                    'product': product,
-                    'match_score': score
-                })
+                
+                # Добавляем только если релевантность выше порога
+                if score >= self.min_relevance_threshold:
+                    matching_products.append({
+                        'product': product,
+                        'match_score': score
+                    })
         
-        # Сортируем по score и берем топ-5
+        # Сортируем по score
         matching_products.sort(key=lambda x: x['match_score'], reverse=True)
-        return matching_products[:5]
+        
+        # Возвращаем все рекомендации, но не более максимального количества
+        return matching_products[:self.max_recommendations]
         
     def get_recommendations(self, query: str) -> dict:
         """
@@ -170,10 +177,23 @@ class GiftRecommendationService:
             for match in matching_products:
                 product = match['product']
                 serializer = ProductSerializer(product)
-                products_data.append({
-                    'product': serializer.data,
-                    'relevance': round(match['match_score'] * 100)  # Процент релевантности
-                })
+                relevance = round(match['match_score'] * 100)  # Процент релевантности
+                
+                # Добавляем только если релевантность выше порога
+                if relevance >= self.min_relevance_threshold * 100:
+                    products_data.append({
+                        'product': serializer.data,
+                        'relevance': relevance
+                    })
+
+            # Если после фильтрации не осталось продуктов
+            if not products_data:
+                return {
+                    'success': True,
+                    'query': query,
+                    'message': 'К сожалению, не удалось найти достаточно релевантные букеты по вашему запросу. Попробуйте изменить формулировку.',
+                    'products': []
+                }
 
             result = {
                 'success': True,

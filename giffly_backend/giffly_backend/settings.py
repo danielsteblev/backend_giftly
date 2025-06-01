@@ -47,13 +47,15 @@ ROOT_URLCONF = 'giffly_backend.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],  # Добавляем директорию для шаблонов
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
+                'django.template.context_processors.debug',  # Добавляем контекстный процессор для отладки
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'django.template.context_processors.static',  # Добавляем контекстный процессор для статических файлов
             ],
         },
     },
@@ -152,9 +154,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ru-ru'  # Меняем язык на русский
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Moscow'  # Меняем часовой пояс на московский
 
 USE_I18N = True
 
@@ -166,6 +168,14 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),  # Добавляем директорию для статических файлов
+]
+
+# Настройки для админки
+ADMIN_SITE_HEADER = "Giftly Administration"
+ADMIN_SITE_TITLE = "Giftly Admin Portal"
+ADMIN_INDEX_TITLE = "Welcome to Giftly Admin Portal"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

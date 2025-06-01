@@ -10,7 +10,8 @@ services:
       - './staticfiles:/app/static'
       - './media:/app/media'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - giftly_network
 
@@ -33,9 +34,16 @@ services:
       - DATABASE_URL=postgres://postgres:1985@db:5432/giftly_db
       - GIGACHAT_CREDENTIALS=YTg5NjI5YmQtY2ZjMy00ODg1LTk3NzgtOGEyMjk0ZjQ2MGFiOjY2NmYyZjQ4LTNiZmItNDAzYy1iMTNlLThlNTRkODRjOWZiOQ==
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - giftly_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   db:
     image: postgres:latest
@@ -49,6 +57,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - giftly_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   giftly_network:
